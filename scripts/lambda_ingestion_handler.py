@@ -20,17 +20,19 @@ import hmac
 import base64
 import datetime
 import logging
-from typing import Any
+from typing import Any, Optional
 
 import urllib.request
 import urllib.error
 
 # ─── Configuration via Environment Variables ────────────────────────────────────
 
-WORKSPACE_ID = os.environ["SENTINEL_WORKSPACE_ID"]
-SHARED_KEY = os.environ["SENTINEL_SHARED_KEY"]
 LOG_TYPE = os.environ.get("LOG_TYPE", "AWSGuardDuty")
 AWS_REGION = os.environ.get("AWS_REGION", "eu-west-2")
+
+# Maximum number of attempts when posting to the Sentinel API.
+# Set to 1 to disable retries (useful in unit tests or strict SLA environments).
+_MAX_RETRIES: int = int(os.environ.get("MAX_RETRIES", "3"))
 
 # ─── Logging Setup ──────────────────────────────────────────────────────────────
 
@@ -39,6 +41,13 @@ logger.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
 
 
 # ─── Sentinel API Authentication ────────────────────────────────────────────────
+
+def get_required_env(name: str) -> str:
+    """Return a required environment variable with a clear runtime error."""
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
 
 def build_signature(
     workspace_id: str,
@@ -57,12 +66,17 @@ def build_signature(
     bytes_to_hash = string_to_hash.encode("utf-8")
     decoded_key = base64.b64decode(shared_key)
     encoded_hash = base64.b64encode(
-        hmac.new(decoded_key, bytes_to_hash, digestmod=hashlib.sha256).digest()
+        hmac.HMAC(decoded_key, bytes_to_hash, digestmod=hashlib.sha256).digest()
     ).decode("utf-8")
     return f"SharedKey {workspace_id}:{encoded_hash}"
 
 
-def post_to_sentinel(body: str, log_type: str) -> int:
+def post_to_sentinel(
+    body: str,
+    log_type: str,
+    workspace_id: Optional[str] = None,
+    shared_key: Optional[str] = None,
+) -> int:
     """
     Post JSON payload to the Log Analytics Data Collector API.
 
@@ -72,15 +86,18 @@ def post_to_sentinel(body: str, log_type: str) -> int:
     Raises:
         urllib.error.URLError on network failures
     """
+    workspace_id = workspace_id or get_required_env("SENTINEL_WORKSPACE_ID")
+    shared_key = shared_key or get_required_env("SENTINEL_SHARED_KEY")
+
     rfc1123_date = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
     content_length = len(body)
 
     signature = build_signature(
-        WORKSPACE_ID, SHARED_KEY, rfc1123_date, content_length
+        workspace_id, shared_key, rfc1123_date, content_length
     )
 
     uri = (
-        f"https://{WORKSPACE_ID}.ods.opinsights.azure.com"
+        f"https://{workspace_id}.ods.opinsights.azure.com"
         f"/api/logs?api-version=2016-04-01"
     )
 
