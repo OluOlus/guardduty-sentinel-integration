@@ -1,0 +1,109 @@
+{
+  "schemaVersion": "2.0",
+  "accountId": "123456789012",
+  "region": "us-east-1",
+  "partition": "aws",
+  "id": "16c0b8e8b8f8e8f8e8f8e8f8e8f8e8f8",
+  "arn": "arn:aws:guardduty:us-east-1:123456789012:detector/12abc34d567e8f90123456789012345/finding/16c0b8e8b8f8e8f8e8f8e8f8e8f8e8f8",
+  "type": "Trojan:EC2/DNSDataExfiltration",
+  "resource": {
+    "resourceType": "Instance",
+    "instanceDetails": {
+      "instanceId": "i-1234567890abcdef0",
+      "instanceType": "t3.medium",
+      "launchTime": "2024-01-01T10:00:00.000Z",
+      "platform": "linux",
+      "productCodes": [],
+      "iamInstanceProfile": {
+        "arn": "arn:aws:iam::123456789012:instance-profile/EC2-Role",
+        "id": "AIPAI23HZ27SI6FQMGNQ2"
+      },
+      "networkInterfaces": [
+        {
+          "ipv6Addresses": [],
+          "networkInterfaceId": "eni-12345678",
+          "privateDnsName": "ip-10-0-0-1.ec2.internal",
+          "privateIpAddress": "10.0.0.1",
+          "privateIpAddresses": [
+            {
+              "privateDnsName": "ip-10-0-0-1.ec2.internal",
+              "privateIpAddress": "10.0.0.1"
+            }
+          ],
+          "subnetId": "subnet-12345678",
+          "vpcId": "vpc-12345678",
+          "securityGroups": [
+            {
+              "groupName": "web-servers",
+              "groupId": "sg-12345678"
+            }
+          ],
+          "publicDnsName": "ec2-198-51-100-1.compute-1.amazonaws.com",
+          "publicIp": "198.51.100.1"
+        }
+      ],
+      "outpostArn": null,
+      "tags": [
+        {
+          "key": "Name",
+          "value": "WebServer-Prod"
+        },
+        {
+          "key": "Environment",
+          "value": "Production"
+        },
+        {
+          "key": "Team",
+          "value": "Security"
+        }
+      ],
+      "instanceState": "running",
+      "availabilityZone": "us-east-1a",
+      "imageId": "ami-0abcdef1234567890",
+      "imageDescription": "Amazon Linux 2 AMI (HVM) - Kernel 5.10"
+    }
+  },
+  "service": {
+    "serviceName": "guardduty",
+    "detectorId": "12abc34d567e8f90123456789012345",
+    "action": {
+      "actionType": "DNS_REQUEST",
+      "dnsRequestAction": {
+        "domain": "malicious-exfil.example.com",
+        "protocol": "UDP",
+        "blocked": false
+      }
+    },
+    "evidence": {
+      "threatIntelligenceDetails": [
+        {
+          "threatListName": "ProofPoint",
+          "threatNames": [
+            "malicious-exfil.example.com"
+          ]
+        },
+        {
+          "threatListName": "CrowdStrike",
+          "threatNames": [
+            "DNS-Exfiltration-Domain"
+          ]
+        }
+      ]
+    },
+    "archived": false,
+    "count": 15,
+    "eventFirstSeen": "2024-01-01T12:00:00.000Z",
+    "eventLastSeen": "2024-01-01T14:30:00.000Z",
+    "resourceRole": "TARGET",
+    "additionalInfo": {
+      "value": "{\"sample\": true, \"threatFamily\": \"DNS-Exfiltration\"}",
+      "type": "default"
+    },
+    "featureName": "DnsLogs"
+  },
+  "severity": 8.0,
+  "createdAt": "2024-01-01T12:00:00.000Z",
+  "updatedAt": "2024-01-01T14:30:00.000Z",
+  "title": "Trojan:EC2/DNSDataExfiltration",
+  "description": "EC2 instance i-1234567890abcdef0 is querying a domain name that is associated with a known trojan. This behavior is indicative of a compromised instance attempting to exfiltrate data through DNS queries."
+}

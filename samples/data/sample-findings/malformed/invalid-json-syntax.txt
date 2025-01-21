@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "2.0",
+  "accountId": "123456789012",
+  "region": "us-east-1",
+  "partition": "aws",
+  "id": "invalid-json-syntax",
+  "arn": "arn:aws:guardduty:us-east-1:123456789012:detector/test/finding/invalid-json-syntax",
+  "type": "Malformed:Test/InvalidSyntax",
+  "resource": {
+    "resourceType": "Instance",
+  },  // Invalid trailing comma
+  "service": {
+    "serviceName": "guardduty",
+    "detectorId": "test-detector",
+    "archived": false,
+    "count": 1,
+    "eventFirstSeen": "2024-01-01T00:00:00.000Z",
+    "eventLastSeen": "2024-01-01T00:00:00.000Z",
+    "resourceRole": "TARGET"
+  },
+  "severity": 5.0,
+  "createdAt": "2024-01-01T00:00:00.000Z",
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "title": "Invalid JSON Syntax Test",
+  "description": "This JSON has invalid syntax with trailing commas and comments"
+  // Invalid comment in JSON
+}

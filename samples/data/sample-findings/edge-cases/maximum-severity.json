@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "2.0",
+  "accountId": "999999999999",
+  "region": "us-east-1",
+  "partition": "aws",
+  "id": "maximum-severity-finding",
+  "arn": "arn:aws:guardduty:us-east-1:999999999999:detector/max/finding/maximum-severity-finding",
+  "type": "Critical:Test/MaximumSeverity",
+  "resource": {
+    "resourceType": "Instance",
+    "instanceDetails": {
+      "instanceId": "i-maxseveritytest123",
+      "instanceType": "m5.24xlarge",
+      "launchTime": "2024-01-01T00:00:00.000Z",
+      "platform": "linux",
+      "instanceState": "running",
+      "availabilityZone": "us-east-1a",
+      "tags": [
+        {
+          "key": "CriticalSystem",
+          "value": "true"
+        }
+      ]
+    }
+  },
+  "service": {
+    "serviceName": "guardduty",
+    "detectorId": "max-severity-detector",
+    "archived": false,
+    "count": 999,
+    "eventFirstSeen": "2024-01-01T00:00:00.000Z",
+    "eventLastSeen": "2024-01-01T23:59:59.999Z",
+    "resourceRole": "TARGET",
+    "evidence": {
+      "threatIntelligenceDetails": [
+        {
+          "threatListName": "Critical-Threats",
+          "threatNames": [
+            "advanced-persistent-threat",
+            "nation-state-actor",
+            "zero-day-exploit"
+          ]
+        }
+      ]
+    }
+  },
+  "severity": 8.9,
+  "createdAt": "2024-01-01T00:00:00.000Z",
+  "updatedAt": "2024-01-01T23:59:59.999Z",
+  "title": "Critical:Test/MaximumSeverity",
+  "description": "This finding represents the maximum possible severity (8.9) for testing boundary conditions and high-priority alert processing."
+}

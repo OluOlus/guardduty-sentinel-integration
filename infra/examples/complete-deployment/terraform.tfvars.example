@@ -1,0 +1,56 @@
+# Example Terraform variables for complete GuardDuty to Sentinel deployment
+# Copy this file to terraform.tfvars and customize for your environment
+
+# Basic Configuration
+name_prefix = "my-company-guardduty"
+environment = "prod"
+
+# AWS Configuration
+aws_region = "us-east-1"
+create_guardduty_detector = false  # Set to true if you don't have GuardDuty enabled
+s3_retention_days = 90
+
+# Cross-account access (if using Azure ingestion from different AWS account)
+# azure_ingestion_role_arns = ["arn:aws:iam::123456789012:role/AzureIngestionRole"]
+# cross_account_external_id = "unique-external-id-for-security"
+
+# Azure Configuration
+azure_location = "East US"
+log_analytics_retention_days = 90
+enable_data_transformation = false
+dce_public_access = true
+enable_application_insights = true
+
+# Sentinel Configuration
+enable_sentinel = true
+high_severity_threshold = 7.0
+enable_automation_rules = true
+
+# Incident Management
+default_incident_owner_id = "12345678-1234-1234-1234-123456789012"  # Azure AD user/group object ID
+
+# Notification Configuration
+notification_emails = [
+  "security-team@company.com",
+  "soc@company.com"
+]
+
+notification_webhooks = [
+  "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+]
+
+# Analytics Rule Customization
+analytics_rule_frequencies = {
+  high_severity_findings = "PT30M"  # Every 30 minutes for high severity
+  cryptocurrency_mining  = "PT2H"   # Every 2 hours for crypto mining
+  data_exfiltration     = "PT1H"   # Every hour for data exfiltration
+  malware_backdoor      = "PT30M"  # Every 30 minutes for malware
+}
+
+# Additional Tags
+tags = {
+  Owner       = "security-team"
+  CostCenter  = "security-operations"
+  Environment = "production"
+  Project     = "threat-detection"
+}

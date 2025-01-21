@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "2.0",
+  "accountId": "123456789012",
+  "region": "ap-northeast-1",
+  "partition": "aws",
+  "id": "unicode-test-finding-测试-🔒",
+  "arn": "arn:aws:guardduty:ap-northeast-1:123456789012:detector/unicode-test/finding/unicode-test-finding-测试-🔒",
+  "type": "Test:Unicode/SpecialCharacters",
+  "resource": {
+    "resourceType": "Instance",
+    "instanceDetails": {
+      "instanceId": "i-unicode测试123",
+      "instanceType": "t3.micro",
+      "launchTime": "2024-01-01T00:00:00.000Z",
+      "platform": "linux",
+      "instanceState": "running",
+      "availabilityZone": "ap-northeast-1a",
+      "tags": [
+        {
+          "key": "名前",
+          "value": "テストサーバー"
+        },
+        {
+          "key": "环境",
+          "value": "测试环境"
+        },
+        {
+          "key": "Emoji",
+          "value": "🚀🔒🛡️"
+        }
+      ]
+    }
+  },
+  "service": {
+    "serviceName": "guardduty",
+    "detectorId": "unicode-detector-测试",
+    "action": {
+      "actionType": "DNS_REQUEST",
+      "dnsRequestAction": {
+        "domain": "测试.example.com",
+        "protocol": "UDP",
+        "blocked": false
+      }
+    },
+    "archived": false,
+    "count": 1,
+    "eventFirstSeen": "2024-01-01T12:00:00.000Z",
+    "eventLastSeen": "2024-01-01T12:00:00.000Z",
+    "resourceRole": "TARGET",
+    "additionalInfo": {
+      "value": "{\"unicode\": \"测试\", \"emoji\": \"🔒\", \"special\": \"\\n\\t\\r\\\\\"}",
+      "type": "unicode-test"
+    }
+  },
+  "severity": 5.0,
+  "createdAt": "2024-01-01T12:00:00.000Z",
+  "updatedAt": "2024-01-01T12:00:00.000Z",
+  "title": "Unicode Test Finding - 测试发现 🔒",
+  "description": "This finding contains Unicode characters (测试), emoji (🔒🛡️), and special characters (\\n\\t\\r) to test proper JSON encoding and parsing of international content."
+}

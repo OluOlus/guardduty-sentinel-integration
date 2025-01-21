@@ -1,0 +1,391 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'GuardDuty to Sentinel Integration Lambda Worker'
+
+Parameters:
+  # Azure Configuration
+  AzureTenantId:
+    Type: String
+    Description: Azure tenant ID
+    NoEcho: true
+  
+  AzureClientId:
+    Type: String
+    Description: Azure client ID (service principal)
+    NoEcho: true
+  
+  AzureClientSecret:
+    Type: String
+    Description: Azure client secret
+    NoEcho: true
+  
+  AzureWorkspaceId:
+    Type: String
+    Description: Azure Log Analytics workspace ID
+  
+  AzureSubscriptionId:
+    Type: String
+    Description: Azure subscription ID
+  
+  AzureResourceGroupName:
+    Type: String
+    Description: Azure resource group name
+  
+  AzureDcrImmutableId:
+    Type: String
+    Description: Azure Data Collection Rule immutable ID
+  
+  AzureDcrStreamName:
+    Type: String
+    Description: Azure DCR stream name
+    Default: Custom-GuardDutyFindings
+  
+  # AWS Configuration
+  S3BucketName:
+    Type: String
+    Description: S3 bucket name for GuardDuty findings
+  
+  S3BucketPrefix:
+    Type: String
+    Description: S3 bucket prefix for GuardDuty findings
+    Default: AWSLogs/
+  
+  KmsKeyArn:
+    Type: String
+    Description: KMS key ARN for S3 decryption (optional)
+    Default: ''
+  
+  # Processing Configuration
+  BatchSize:
+    Type: Number
+    Description: Batch size for processing findings
+    Default: 50
+    MinValue: 1
+    MaxValue: 500
+  
+  EnableNormalization:
+    Type: String
+    Description: Enable data normalization
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  
+  EnableDeduplication:
+    Type: String
+    Description: Enable finding deduplication
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+  
+  LogLevel:
+    Type: String
+    Description: Log level for Lambda function
+    Default: info
+    AllowedValues: [debug, info, warn, error]
+
+Globals:
+  Function:
+    Timeout: 300
+    MemorySize: 512
+    Runtime: nodejs18.x
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        # Azure Configuration
+        AZURE_TENANT_ID: !Ref AzureTenantId
+        AZURE_CLIENT_ID: !Ref AzureClientId
+        AZURE_CLIENT_SECRET: !Ref AzureClientSecret
+        AZURE_WORKSPACE_ID: !Ref AzureWorkspaceId
+        AZURE_SUBSCRIPTION_ID: !Ref AzureSubscriptionId
+        AZURE_RESOURCE_GROUP_NAME: !Ref AzureResourceGroupName
+        AZURE_DCR_IMMUTABLE_ID: !Ref AzureDcrImmutableId
+        AZURE_DCR_STREAM_NAME: !Ref AzureDcrStreamName
+        
+        # AWS Configuration
+        AWS_S3_BUCKET_NAME: !Ref S3BucketName
+        AWS_S3_BUCKET_PREFIX: !Ref S3BucketPrefix
+        AWS_KMS_KEY_ARN: !Ref KmsKeyArn
+        
+        # Processing Configuration
+        BATCH_SIZE: !Ref BatchSize
+        MAX_RETRIES: '3'
+        RETRY_BACKOFF_MS: '1000'
+        ENABLE_NORMALIZATION: !Ref EnableNormalization
+        ENABLE_DEDUPLICATION: !Ref EnableDeduplication
+        DEDUPLICATION_STRATEGY: 'findingId'
+        DEDUPLICATION_CACHE_SIZE: '5000'
+        
+        # Monitoring Configuration
+        ENABLE_METRICS: 'true'
+        METRICS_BACKEND_TYPE: 'cloudwatch'
+        LOG_LEVEL: !Ref LogLevel
+        HTTP_TIMEOUT_MS: '25000'
+
+Resources:
+  # Main Lambda function for S3 event processing
+  GuardDutyProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-guardduty-processor'
+      CodeUri: dist/
+      Handler: index.handler
+      Description: 'Process GuardDuty findings from S3 and send to Azure Sentinel'
+      
+      Events:
+        S3Event:
+          Type: S3
+          Properties:
+            Bucket: !Ref GuardDutyS3Bucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: !Ref S3BucketPrefix
+                  - Name: suffix
+                    Value: .jsonl.gz
+      
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref S3BucketName
+        - KMSDecryptPolicy:
+            KeyId: !Ref KmsKeyArn
+        - CloudWatchPutMetricPolicy: {}
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
+      
+      DeadLetterQueue:
+        Type: SQS
+        TargetArn: !GetAtt ProcessingDLQ.Arn
+      
+      ReservedConcurrencyLimit: 10
+      
+      Tags:
+        Project: GuardDuty-Sentinel-Integration
+        Component: Lambda-Worker
+
+  # Health check function (for ALB or manual testing)
+  HealthCheckFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-guardduty-health'
+      CodeUri: dist/
+      Handler: index.healthHandler
+      Description: 'Health check for GuardDuty processor'
+      
+      Events:
+        HealthApi:
+          Type: Api
+          Properties:
+            Path: /health
+            Method: get
+            RestApiId: !Ref GuardDutyApi
+      
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref S3BucketName
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
+      
+      Tags:
+        Project: GuardDuty-Sentinel-Integration
+        Component: Health-Check
+
+  # Manual processing function (for testing)
+  ManualProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-guardduty-manual'
+      CodeUri: dist/
+      Handler: index.manualHandler
+      Description: 'Manual processing trigger for GuardDuty findings'
+      Timeout: 900  # 15 minutes for manual processing
+      
+      Events:
+        ManualApi:
+          Type: Api
+          Properties:
+            Path: /process
+            Method: post
+            RestApiId: !Ref GuardDutyApi
+      
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref S3BucketName
+        - KMSDecryptPolicy:
+            KeyId: !Ref KmsKeyArn
+        - CloudWatchPutMetricPolicy: {}
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
+      
+      Tags:
+        Project: GuardDuty-Sentinel-Integration
+        Component: Manual-Processor
+
+  # API Gateway for health checks and manual processing
+  GuardDutyApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub '${AWS::StackName}-api'
+      StageName: prod
+      Description: 'API for GuardDuty Sentinel integration'
+      
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+      
+      Tags:
+        Project: GuardDuty-Sentinel-Integration
+        Component: API-Gateway
+
+  # S3 bucket reference (assuming it exists)
+  GuardDutyS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3BucketName
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt GuardDutyProcessorFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: !Ref S3BucketPrefix
+                  - Name: suffix
+                    Value: .jsonl.gz
+
+  # Dead Letter Queue for failed processing
+  ProcessingDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${AWS::StackName}-processing-dlq'
+      MessageRetentionPeriod: 1209600  # 14 days
+      VisibilityTimeoutSeconds: 60
+      
+      Tags:
+        - Key: Project
+          Value: GuardDuty-Sentinel-Integration
+        - Key: Component
+          Value: Dead-Letter-Queue
+
+  # CloudWatch Log Groups
+  ProcessorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${GuardDutyProcessorFunction}'
+      RetentionInDays: 30
+
+  HealthLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${HealthCheckFunction}'
+      RetentionInDays: 7
+
+  ManualLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ManualProcessorFunction}'
+      RetentionInDays: 14
+
+  # CloudWatch Dashboard
+  GuardDutyDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${AWS::StackName}-dashboard'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Lambda", "Invocations", "FunctionName", "${GuardDutyProcessorFunction}" ],
+                  [ ".", "Errors", ".", "." ],
+                  [ ".", "Duration", ".", "." ]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Lambda Metrics"
+              }
+            },
+            {
+              "type": "log",
+              "x": 0,
+              "y": 6,
+              "width": 24,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/lambda/${GuardDutyProcessorFunction}'\n| fields @timestamp, @message\n| filter @message like /ERROR/\n| sort @timestamp desc\n| limit 100",
+                "region": "${AWS::Region}",
+                "title": "Recent Errors"
+              }
+            }
+          ]
+        }
+
+Outputs:
+  GuardDutyProcessorFunction:
+    Description: 'GuardDuty Processor Lambda Function ARN'
+    Value: !GetAtt GuardDutyProcessorFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-processor-function-arn'
+
+  HealthCheckFunction:
+    Description: 'Health Check Lambda Function ARN'
+    Value: !GetAtt HealthCheckFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-health-function-arn'
+
+  ApiGatewayUrl:
+    Description: 'API Gateway endpoint URL'
+    Value: !Sub 'https://${GuardDutyApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+    Export:
+      Name: !Sub '${AWS::StackName}-api-url'
+
+  HealthCheckUrl:
+    Description: 'Health check endpoint URL'
+    Value: !Sub 'https://${GuardDutyApi}.execute-api.${AWS::Region}.amazonaws.com/prod/health'
+    Export:
+      Name: !Sub '${AWS::StackName}-health-url'
+
+  ManualProcessingUrl:
+    Description: 'Manual processing endpoint URL'
+    Value: !Sub 'https://${GuardDutyApi}.execute-api.${AWS::Region}.amazonaws.com/prod/process'
+    Export:
+      Name: !Sub '${AWS::StackName}-manual-url'
+
+  ProcessingDLQUrl:
+    Description: 'Processing Dead Letter Queue URL'
+    Value: !Ref ProcessingDLQ
+    Export:
+      Name: !Sub '${AWS::StackName}-dlq-url'
+
+  DashboardUrl:
+    Description: 'CloudWatch Dashboard URL'
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${AWS::StackName}-dashboard'
+    Export:
+      Name: !Sub '${AWS::StackName}-dashboard-url'

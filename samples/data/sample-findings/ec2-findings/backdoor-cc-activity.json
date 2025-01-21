@@ -1,0 +1,113 @@
+{
+  "schemaVersion": "2.0",
+  "accountId": "987654321098",
+  "region": "us-west-2",
+  "partition": "aws",
+  "id": "2a1b3c4d5e6f7g8h9i0j1k2l3m4n5o6p",
+  "arn": "arn:aws:guardduty:us-west-2:987654321098:detector/98def76c543b2a1098765432109876/finding/2a1b3c4d5e6f7g8h9i0j1k2l3m4n5o6p",
+  "type": "Backdoor:EC2/C&CActivity.B!DNS",
+  "resource": {
+    "resourceType": "Instance",
+    "instanceDetails": {
+      "instanceId": "i-0987654321fedcba0",
+      "instanceType": "m5.large",
+      "launchTime": "2024-01-02T08:30:00.000Z",
+      "platform": "windows",
+      "productCodes": [
+        {
+          "code": "aw0evgkw8e5c1q413zgy5pjce",
+          "productType": "marketplace"
+        }
+      ],
+      "iamInstanceProfile": {
+        "arn": "arn:aws:iam::987654321098:instance-profile/WindowsServer-Role",
+        "id": "AIPBJ34IZ38TJ7GRNHOR3"
+      },
+      "networkInterfaces": [
+        {
+          "ipv6Addresses": ["2001:db8::1"],
+          "networkInterfaceId": "eni-87654321",
+          "privateDnsName": "ip-172-31-0-100.us-west-2.compute.internal",
+          "privateIpAddress": "172.31.0.100",
+          "privateIpAddresses": [
+            {
+              "privateDnsName": "ip-172-31-0-100.us-west-2.compute.internal",
+              "privateIpAddress": "172.31.0.100"
+            }
+          ],
+          "subnetId": "subnet-87654321",
+          "vpcId": "vpc-87654321",
+          "securityGroups": [
+            {
+              "groupName": "windows-servers",
+              "groupId": "sg-87654321"
+            },
+            {
+              "groupName": "rdp-access",
+              "groupId": "sg-11223344"
+            }
+          ],
+          "publicDnsName": "ec2-203-0-113-50.us-west-2.compute.amazonaws.com",
+          "publicIp": "203.0.113.50"
+        }
+      ],
+      "outpostArn": null,
+      "tags": [
+        {
+          "key": "Name",
+          "value": "WindowsServer-Dev"
+        },
+        {
+          "key": "Environment",
+          "value": "Development"
+        },
+        {
+          "key": "Owner",
+          "value": "DevTeam"
+        }
+      ],
+      "instanceState": "running",
+      "availabilityZone": "us-west-2b",
+      "imageId": "ami-0def9876543210abc",
+      "imageDescription": "Microsoft Windows Server 2019 Base"
+    }
+  },
+  "service": {
+    "serviceName": "guardduty",
+    "detectorId": "98def76c543b2a1098765432109876",
+    "action": {
+      "actionType": "DNS_REQUEST",
+      "dnsRequestAction": {
+        "domain": "c2-server.malicious.net",
+        "protocol": "UDP",
+        "blocked": true
+      }
+    },
+    "evidence": {
+      "threatIntelligenceDetails": [
+        {
+          "threatListName": "Emerging Threats",
+          "threatNames": [
+            "c2-server.malicious.net",
+            "Command-Control-Infrastructure"
+          ]
+        }
+      ]
+    },
+    "archived": false,
+    "count": 7,
+    "eventFirstSeen": "2024-01-02T10:15:00.000Z",
+    "eventLastSeen": "2024-01-02T11:45:00.000Z",
+    "resourceRole": "ACTOR",
+    "additionalInfo": {
+      "value": "{\"sample\": true, \"threatFamily\": \"Backdoor\", \"blocked\": true}",
+      "type": "default"
+    },
+    "featureName": "DnsLogs"
+  },
+  "severity": 7.5,
+  "createdAt": "2024-01-02T10:15:00.000Z",
+  "updatedAt": "2024-01-02T11:45:00.000Z",
+  "title": "Backdoor:EC2/C&CActivity.B!DNS",
+  "description": "EC2 instance i-0987654321fedcba0 is querying a domain name associated with a known command and control server. This indicates the instance may be compromised and attempting to communicate with malicious infrastructure."
+}

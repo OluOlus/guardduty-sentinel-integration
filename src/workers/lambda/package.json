@@ -1,0 +1,29 @@
+{
+  "name": "guardduty-sentinel-lambda",
+  "version": "1.0.0",
+  "description": "AWS Lambda worker for GuardDuty to Sentinel integration",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "package": "npm run build && zip -r guardduty-sentinel-lambda.zip dist/ node_modules/",
+    "deploy": "./deploy.sh",
+    "test": "jest",
+    "clean": "rimraf dist *.zip"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@aws-sdk/client-kms": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "rimraf": "^5.0.0",
+    "jest": "^29.0.0",
+    "@types/jest": "^29.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
