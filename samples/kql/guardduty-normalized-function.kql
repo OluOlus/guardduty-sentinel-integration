@@ -1,0 +1,46 @@
+// GuardDutyNormalized() KQL Function
+// Creates a normalized view of GuardDuty findings from RawGuardDuty_CL table
+
+RawGuardDuty_CL
+| extend ParsedJson = parse_json(RawJson)
+| extend 
+    CreatedAt = todatetime(ParsedJson.createdAt),
+    UpdatedAt = todatetime(ParsedJson.updatedAt),
+    Title = tostring(ParsedJson.title),
+    Description = tostring(ParsedJson.description),
+    Service = tostring(ParsedJson.service.serviceName),
+    ResourceType = tostring(ParsedJson.resource.resourceType),
+    InstanceId = tostring(ParsedJson.resource.instanceDetails.instanceId),
+    RemoteIpCountry = tostring(ParsedJson.service.action.networkConnectionAction.remoteIpDetails.country.countryName),
+    RemoteIpAddress = tostring(ParsedJson.service.action.networkConnectionAction.remoteIpDetails.ipAddressV4),
+    DnsRequestDomain = tostring(ParsedJson.service.action.dnsRequestAction.domain),
+    ActionType = tostring(ParsedJson.service.action.actionType),
+    ThreatNames = tostring(ParsedJson.service.evidence.threatIntelligenceDetails[0].threatNames[0]),
+    EventFirstSeen = todatetime(ParsedJson.service.eventFirstSeen),
+    EventLastSeen = todatetime(ParsedJson.service.eventLastSeen),
+    Count = toint(ParsedJson.service.count),
+    Archived = tobool(ParsedJson.service.archived)
+| project 
+    TimeGenerated, 
+    FindingId, 
+    AccountId, 
+    Region, 
+    Severity, 
+    Type,
+    CreatedAt, 
+    UpdatedAt, 
+    Title, 
+    Description, 
+    Service, 
+    ResourceType, 
+    InstanceId, 
+    RemoteIpCountry, 
+    RemoteIpAddress,
+    DnsRequestDomain,
+    ActionType,
+    ThreatNames,
+    EventFirstSeen,
+    EventLastSeen,
+    Count,
+    Archived,
+    RawJson

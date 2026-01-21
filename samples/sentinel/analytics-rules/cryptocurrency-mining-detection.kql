@@ -1,0 +1,56 @@
+// Cryptocurrency Mining Detection Analytics Rule
+// Detects GuardDuty findings related to cryptocurrency mining activities
+// Rule Type: Scheduled
+// Frequency: 15 minutes
+// Query Period: 15 minutes
+
+let LookbackPeriod = 15m;
+let CryptoMiningTypes = dynamic([
+    "CryptoCurrency:EC2/BitcoinTool.B!DNS",
+    "CryptoCurrency:EC2/BitcoinTool.B",
+    "CryptoCurrency:Runtime/BitcoinTool.B",
+    "CryptoCurrency:Runtime/BitcoinTool.B!DNS"
+]);
+
+GuardDutyNormalized()
+| where TimeGenerated >= ago(LookbackPeriod)
+| where Type in (CryptoMiningTypes) or Type contains "CryptoCurrency"
+| where not(Archived)
+| extend
+    MiningIndicators = pack_array(
+        iff(isnotempty(DnsRequestDomain) and (DnsRequestDomain contains "pool" or DnsRequestDomain contains "mining"), "Suspicious DNS", ""),
+        iff(isnotempty(RemoteIpAddress), "External Communication", ""),
+        iff(Count > 10, "High Frequency Activity", ""),
+        iff(isnotempty(ThreatNames), strcat("Known Threat: ", ThreatNames), "")
+    ),
+    RiskScore = case(
+        Severity >= 8.0 and Count > 50, 95,
+        Severity >= 7.0 and Count > 20, 85,
+        Severity >= 6.0 and Count > 10, 75,
+        Severity >= 5.0, 65,
+        50
+    )
+| extend MiningIndicators = array_strcat(array_slice(MiningIndicators, 0, array_length(MiningIndicators)), ", ")
+| where MiningIndicators != ""
+| project
+    TimeGenerated,
+    FindingId,
+    AccountId,
+    Region,
+    Severity,
+    RiskScore,
+    Type,
+    Title,
+    Description,
+    ResourceType,
+    InstanceId,
+    RemoteIpAddress,
+    RemoteIpCountry,
+    DnsRequestDomain,
+    ThreatNames,
+    MiningIndicators,
+    Count,
+    EventFirstSeen,
+    EventLastSeen,
+    RawJson
+| sort by RiskScore desc, TimeGenerated desc

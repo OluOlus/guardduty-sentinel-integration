@@ -1,0 +1,75 @@
+// Data Exfiltration Detection Analytics Rule
+// Detects GuardDuty findings related to potential data exfiltration activities
+// Rule Type: Scheduled
+// Frequency: 5 minutes
+// Query Period: 15 minutes
+
+let LookbackPeriod = 15m;
+let ExfiltrationTypes = dynamic([
+    "Exfiltration", "DNSDataExfiltration", "UnauthorizedAPICall"
+]);
+
+GuardDutyNormalized()
+| where TimeGenerated >= ago(LookbackPeriod)
+| where not(Archived)
+| where Type has_any (ExfiltrationTypes) or Type contains "Exfiltration"
+| extend
+    ExfiltrationType = case(
+        Type contains "DNSDataExfiltration", "DNS Tunneling",
+        Type contains "UnauthorizedAPICall", "API Abuse",
+        Type contains "DataExfiltration", "Direct Data Transfer",
+        "Unknown Method"
+    ),
+    DataSensitivity = case(
+        ResourceType == "S3Bucket", "High - S3 Data",
+        ResourceType == "Instance" and Type contains "Database", "High - Database Access",
+        ResourceType == "Instance", "Medium - Compute Resource",
+        "Low"
+    ),
+    UrgencyLevel = case(
+        Severity >= 8.0 and DataSensitivity == "High - S3 Data", "Critical",
+        Severity >= 7.0 and DataSensitivity contains "High", "High",
+        Severity >= 6.0, "Medium",
+        "Low"
+    )
+| extend
+    InvestigationSteps = pack_array(
+        "Review data access patterns in CloudTrail",
+        "Check S3 bucket access logs for unusual downloads",
+        "Analyze network traffic for large data transfers",
+        "Verify user permissions and access keys",
+        "Check for compromised credentials",
+        iff(isnotempty(RemoteIpAddress), strcat("Investigate IP reputation: ", RemoteIpAddress), ""),
+        iff(isnotempty(DnsRequestDomain), strcat("Analyze DNS queries to: ", DnsRequestDomain), "")
+    ),
+    ImmediateActions = pack_array(
+        "Revoke suspicious access keys immediately",
+        "Enable S3 bucket notifications for monitoring",
+        "Implement network segmentation",
+        "Review and tighten IAM policies"
+    )
+| project
+    TimeGenerated,
+    FindingId,
+    AccountId,
+    Region,
+    Severity,
+    UrgencyLevel,
+    Type,
+    ExfiltrationType,
+    DataSensitivity,
+    Title,
+    Description,
+    ResourceType,
+    InstanceId,
+    RemoteIpAddress,
+    RemoteIpCountry,
+    DnsRequestDomain,
+    ThreatNames,
+    InvestigationSteps,
+    ImmediateActions,
+    Count,
+    EventFirstSeen,
+    EventLastSeen,
+    RawJson
+| sort by UrgencyLevel desc, Severity desc, TimeGenerated desc

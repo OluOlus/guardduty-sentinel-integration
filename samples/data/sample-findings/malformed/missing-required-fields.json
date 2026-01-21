@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "2.0",
+  "accountId": "123456789012",
+  "region": "us-east-1",
+  "partition": "aws",
+  "id": "malformed-missing-fields",
+  "type": "Malformed:Test/MissingFields",
+  "resource": {
+    "resourceType": "Instance"
+  },
+  "service": {
+    "serviceName": "guardduty",
+    "detectorId": "malformed-detector"
+  },
+  "severity": 5.0,
+  "createdAt": "2024-01-01T00:00:00.000Z",
+  "title": "Malformed Finding - Missing Required Fields"
+}

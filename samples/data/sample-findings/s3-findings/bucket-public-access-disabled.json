@@ -1,0 +1,126 @@
+{
+  "schemaVersion": "2.0",
+  "accountId": "111222333444",
+  "region": "us-east-2",
+  "partition": "aws",
+  "id": "4c3d5e6f7g8h9i0j1k2l3m4n5o6p7q8r",
+  "arn": "arn:aws:guardduty:us-east-2:111222333444:detector/44def99d765c4b3210987654321098/finding/4c3d5e6f7g8h9i0j1k2l3m4n5o6p7q8r",
+  "type": "Policy:S3/BucketBlockPublicAccessDisabled",
+  "resource": {
+    "resourceType": "S3Bucket",
+    "s3BucketDetails": [
+      {
+        "arn": "arn:aws:s3:::sensitive-company-data-bucket",
+        "name": "sensitive-company-data-bucket",
+        "type": "Destination",
+        "createdAt": "2023-12-15T10:00:00.000Z",
+        "owner": {
+          "id": "bcaf1ffd86f41161ca5fb16fd081034f"
+        },
+        "tags": [
+          {
+            "key": "Classification",
+            "value": "Confidential"
+          },
+          {
+            "key": "Department",
+            "value": "Finance"
+          },
+          {
+            "key": "Backup",
+            "value": "Required"
+          }
+        ],
+        "defaultServerSideEncryption": {
+          "encryptionType": "SSEAlgorithm",
+          "kmsMasterKeyArn": "arn:aws:kms:us-east-2:111222333444:key/12345678-1234-1234-1234-123456789012"
+        },
+        "publicAccess": {
+          "permissionConfiguration": {
+            "bucketLevelPermissions": {
+              "accessControlList": {
+                "allowsPublicReadAccess": false,
+                "allowsPublicWriteAccess": false
+              },
+              "bucketPolicy": {
+                "allowsPublicReadAccess": true,
+                "allowsPublicWriteAccess": false
+              },
+              "blockPublicAccess": {
+                "ignorePublicAcls": false,
+                "restrictPublicBuckets": false,
+                "blockPublicAcls": false,
+                "blockPublicPolicy": false
+              }
+            },
+            "accountLevelPermissions": {
+              "blockPublicAccess": {
+                "ignorePublicAcls": true,
+                "restrictPublicBuckets": true,
+                "blockPublicAcls": true,
+                "blockPublicPolicy": true
+              }
+            }
+          },
+          "effectivePermission": "PUBLIC"
+        }
+      }
+    ]
+  },
+  "service": {
+    "serviceName": "guardduty",
+    "detectorId": "44def99d765c4b3210987654321098",
+    "action": {
+      "actionType": "AWS_API_CALL",
+      "awsApiCallAction": {
+        "api": "PutBucketPolicy",
+        "serviceName": "s3.amazonaws.com",
+        "callerType": "Remote IP",
+        "remoteIpDetails": {
+          "ipAddressV4": "203.0.113.100",
+          "organization": {
+            "asn": "15169",
+            "asnOrg": "Google LLC",
+            "isp": "Google",
+            "org": "Google"
+          },
+          "country": {
+            "countryCode": "US",
+            "countryName": "United States"
+          },
+          "city": {
+            "cityName": "Mountain View"
+          },
+          "geoLocation": {
+            "lat": 37.4056,
+            "lon": -122.0775
+          }
+        },
+        "domainDetails": {
+          "domain": "s3.amazonaws.com"
+        },
+        "userAgent": "aws-cli/2.4.6 Python/3.8.8 Linux/5.4.0-65-generic exe/x86_64.ubuntu.20",
+        "errorCode": null,
+        "affectedResources": {
+          "AWS::S3::Bucket": "sensitive-company-data-bucket"
+        }
+      }
+    },
+    "evidence": null,
+    "archived": false,
+    "count": 1,
+    "eventFirstSeen": "2024-01-04T14:20:00.000Z",
+    "eventLastSeen": "2024-01-04T14:20:00.000Z",
+    "resourceRole": "TARGET",
+    "additionalInfo": {
+      "value": "{\"sample\": true, \"policyChange\": \"public-access-enabled\"}",
+      "type": "default"
+    },
+    "featureName": "S3Protection"
+  },
+  "severity": 7.0,
+  "createdAt": "2024-01-04T14:20:00.000Z",
+  "updatedAt": "2024-01-04T14:20:00.000Z",
+  "title": "Policy:S3/BucketBlockPublicAccessDisabled",
+  "description": "S3 bucket sensitive-company-data-bucket has disabled the block public access setting, making it publicly accessible. This could lead to unauthorized access to sensitive data stored in the bucket."
+}

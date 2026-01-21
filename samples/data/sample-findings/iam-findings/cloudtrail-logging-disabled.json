@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "2.0",
+  "accountId": "999888777666",
+  "region": "ap-southeast-1",
+  "partition": "aws",
+  "id": "5d4e6f7g8h9i0j1k2l3m4n5o6p7q8r9s",
+  "arn": "arn:aws:guardduty:ap-southeast-1:999888777666:detector/55eff00e876d5c4321098765432109/finding/5d4e6f7g8h9i0j1k2l3m4n5o6p7q8r9s",
+  "type": "Stealth:IAMUser/CloudTrailLoggingDisabled",
+  "resource": {
+    "resourceType": "AccessKey",
+    "accessKeyDetails": {
+      "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+      "principalId": "AIDACKCEVSQ6C2EXAMPLE",
+      "userName": "security-admin",
+      "userType": "IAMUser"
+    }
+  },
+  "service": {
+    "serviceName": "guardduty",
+    "detectorId": "55eff00e876d5c4321098765432109",
+    "action": {
+      "actionType": "AWS_API_CALL",
+      "awsApiCallAction": {
+        "api": "StopLogging",
+        "serviceName": "cloudtrail.amazonaws.com",
+        "callerType": "Remote IP",
+        "remoteIpDetails": {
+          "ipAddressV4": "198.51.100.200",
+          "organization": {
+            "asn": "7922",
+            "asnOrg": "Comcast Cable Communications, LLC",
+            "isp": "Comcast Cable Communications",
+            "org": "Comcast Cable Communications"
+          },
+          "country": {
+            "countryCode": "US",
+            "countryName": "United States"
+          },
+          "city": {
+            "cityName": "Philadelphia"
+          },
+          "geoLocation": {
+            "lat": 39.9523,
+            "lon": -75.1638
+          }
+        },
+        "domainDetails": {
+          "domain": "cloudtrail.amazonaws.com"
+        },
+        "userAgent": "aws-cli/1.18.69 Python/3.6.9 Linux/4.15.0-96-generic botocore/1.16.19",
+        "errorCode": null,
+        "remoteAccountDetails": {
+          "accountId": "999888777666",
+          "affiliated": true
+        },
+        "affectedResources": {
+          "AWS::CloudTrail::Trail": "arn:aws:cloudtrail:ap-southeast-1:999888777666:trail/security-audit-trail"
+        }
+      }
+    },
+    "evidence": null,
+    "archived": false,
+    "count": 1,
+    "eventFirstSeen": "2024-01-05T09:30:00.000Z",
+    "eventLastSeen": "2024-01-05T09:30:00.000Z",
+    "resourceRole": "ACTOR",
+    "additionalInfo": {
+      "value": "{\"sample\": true, \"trailName\": \"security-audit-trail\", \"loggingDisabled\": true}",
+      "type": "default"
+    },
+    "featureName": "CloudTrail"
+  },
+  "severity": 8.5,
+  "createdAt": "2024-01-05T09:30:00.000Z",
+  "updatedAt": "2024-01-05T09:30:00.000Z",
+  "title": "Stealth:IAMUser/CloudTrailLoggingDisabled",
+  "description": "An IAM user security-admin has disabled CloudTrail logging for trail security-audit-trail. This action reduces visibility into API activity and may indicate an attempt to hide malicious activity."
+}
