@@ -334,4 +334,18 @@ export class MonitoringSystem extends EventEmitter {
       });
     }
   }
+
+  /**
+   * Start the monitoring system (alias for initialize)
+   */
+  public async start(): Promise<void> {
+    return this.initialize();
+  }
+
+  /**
+   * Stop the monitoring system (alias for shutdown)
+   */
+  public async stop(): Promise<void> {
+    return this.shutdown();
+  }
 }

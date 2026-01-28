@@ -383,6 +383,20 @@ export class MetricsCollector extends EventEmitter {
       });
     }, this.flushIntervalMs);
   }
+
+  /**
+   * Increment a counter metric (convenience method)
+   */
+  public incrementCounter(name: string, value: number = 1, tags?: Record<string, string>): void {
+    this.recordCounter(name, value, tags);
+  }
+
+  /**
+   * Get all metrics (convenience method)
+   */
+  public async getMetrics(): Promise<MetricValue[]> {
+    return Promise.resolve([...this.metricsBuffer]);
+  }
 }
 
 /**

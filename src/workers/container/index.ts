@@ -11,7 +11,7 @@ import express, { NextFunction, Request, Response } from 'express';
 import { GuardDutyProcessor } from './processor';
 import { ContainerConfig, createConfigFromEnvironment } from './config';
 import { StructuredLogger } from '../../services/structured-logger';
-import { HealthCheck } from '../../services/health-check';
+import { HealthCheckSystem } from '../../services/health-check';
 import { MetricsCollector } from '../../services/metrics-collector';
 import { GuardDutyIntegrationApp } from '../../index';
 
@@ -121,8 +121,8 @@ function setupExpressApp(config: ContainerConfig): void {
       };
 
       // Determine overall status
-      const hasUnhealthy = overallHealth.components.some(c => c.status === 'unhealthy');
-      const hasDegraded = overallHealth.components.some(c => c.status === 'degraded');
+      const hasUnhealthy = overallHealth.components.some((c: any) => c.status === 'unhealthy');
+      const hasDegraded = overallHealth.components.some((c: any) => c.status === 'degraded');
       
       if (hasUnhealthy) {
         overallHealth.status = 'unhealthy';

@@ -11,12 +11,12 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext, Timer } from '@a
 import { GuardDutyProcessor } from './processor';
 import { AzureFunctionConfig, createConfigFromEnvironment } from './config';
 import { StructuredLogger } from '../../services/structured-logger';
-import { HealthCheck } from '../../services/health-check';
+import { HealthCheckSystem } from '../../services/health-check';
 
 // Global instances
 let processor: GuardDutyProcessor | null = null;
 let logger: StructuredLogger | null = null;
-let healthCheck: HealthCheck | null = null;
+let healthCheck: HealthCheckSystem | null = null;
 
 /**
  * Initialize the processor and dependencies
@@ -37,7 +37,7 @@ async function initializeProcessor(): Promise<void> {
 
     logger = new StructuredLogger('azure-function-worker', monitoringConfig);
 
-    healthCheck = new HealthCheck({
+    healthCheck = new HealthCheckSystem({
       port: 0, // Not used in Azure Functions
       enableEndpoint: false,
       enableDetailedLogging: monitoringConfig.enableDetailedLogging,
@@ -190,8 +190,8 @@ async function handleHealthCheck(context: InvocationContext): Promise<HttpRespon
     };
 
     // Determine overall status
-    const hasUnhealthy = overallHealth.components.some(c => c.status === 'unhealthy');
-    const hasDegraded = overallHealth.components.some(c => c.status === 'degraded');
+    const hasUnhealthy = overallHealth.components.some((c: any) => c.status === 'unhealthy');
+    const hasDegraded = overallHealth.components.some((c: any) => c.status === 'degraded');
     
     if (hasUnhealthy) {
       overallHealth.status = 'unhealthy';

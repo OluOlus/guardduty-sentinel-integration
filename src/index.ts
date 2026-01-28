@@ -9,13 +9,26 @@
 
 import { ConfigurationManager } from './services/configuration-manager';
 import { StructuredLogger } from './services/structured-logger';
-import { HealthCheck } from './services/health-check';
+import { HealthCheckSystem } from './services/health-check';
 import { MetricsCollector } from './services/metrics-collector';
 import { MonitoringSystem } from './services/monitoring-system';
 
-// Export all types and services
+// Export all types and services (avoiding conflicts)
 export * from './types';
-export * from './services';
+export {
+  S3Service,
+  JSONLProcessor,
+  DataTransformer,
+  BatchProcessor,
+  RetryHandler,
+  DeduplicationService,
+  AzureMonitorClient,
+  ConfigurationManager,
+  MetricsCollector,
+  StructuredLogger,
+  HealthCheckSystem,
+  MonitoringSystem
+} from './services';
 
 // Worker types
 export type WorkerType = 'lambda' | 'azure-function' | 'container';
@@ -29,7 +42,7 @@ export interface ApplicationConfig {
 
 export interface ApplicationContext {
   logger: StructuredLogger;
-  healthCheck: HealthCheck;
+  healthCheck: HealthCheckSystem;
   metricsCollector: MetricsCollector;
   monitoringSystem: MonitoringSystem;
   configManager: ConfigurationManager;
@@ -74,7 +87,17 @@ export class GuardDutyIntegrationApp {
       const monitoringSystem = new MonitoringSystem(monitoringConfig);
 
       // Initialize structured logger
-      const logger = new StructuredLogger('guardduty-integration', monitoringConfig);
+      const logger = new StructuredLogger(
+        'guardduty-integration',
+        {
+          enableMetrics: true,
+          enableDetailedLogging: false,
+          healthCheckPort: 8080
+        },
+        {
+          component: 'main'
+        }
+      );
 
       logger.info('Configuration loaded successfully', {
         sources: configResult.sources.map(s => ({ type: s.type, location: s.location })),
@@ -82,10 +105,29 @@ export class GuardDutyIntegrationApp {
       });
 
       // Initialize health check system
-      const healthCheck = HealthCheck.fromSystem(monitoringSystem.getHealthCheckSystem());
+      const healthCheck = new HealthCheckSystem(
+        {
+          enableMetrics: true,
+          enableDetailedLogging: false,
+          healthCheckPort: configResult.config.monitoring?.healthCheckPort || 8080
+        },
+        logger
+      );
 
       // Initialize metrics collector
-      const metricsCollector = monitoringSystem.getMetricsCollector();
+      const metricsCollector = new MetricsCollector({
+        enableMetrics: configResult.config.monitoring?.enableMetrics ?? true,
+        enableDetailedLogging: false,
+        metricsBackend: configResult.config.monitoring?.metricsBackend
+      });
+
+      // Initialize monitoring system
+      const monitoringSystem = new MonitoringSystem({
+        enableMetrics: configResult.config.monitoring?.enableMetrics ?? true,
+        enableDetailedLogging: configResult.config.monitoring?.enableDetailedLogging ?? false,
+        healthCheckPort: configResult.config.monitoring?.healthCheckPort || 8080,
+        metricsBackend: configResult.config.monitoring?.metricsBackend
+      });
 
       // Create application context
       this.context = {
