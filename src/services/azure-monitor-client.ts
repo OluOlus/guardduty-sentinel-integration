@@ -32,6 +32,8 @@ export class AzureMonitorClient {
   private readonly dcrConfig: DataCollectionRuleConfig;
   private readonly timeoutMs: number;
   private readonly enableRetry: boolean;
+  private readonly retryMaxAttempts = 4;
+  private readonly retryBaseDelayMs = 500;
 
   constructor(options: AzureMonitorClientOptions) {
     const { azureConfig, dcrConfig, timeoutMs = 30000, enableRetry = true } = options;
@@ -71,17 +73,18 @@ export class AzureMonitorClient {
       // Prepare data for ingestion
       const preparedData = this.prepareDataForIngestion(request.data);
 
-      // Perform ingestion using the Logs Ingestion API
-      const result = await this.logsClient.upload(
-        this.dcrConfig.immutableId,
-        request.streamName,
-        preparedData,
-        {
-          requestOptions: {
-            timeout: this.timeoutMs,
-          },
-        }
-      );
+      const result = await this.executeWithRetry(async () => {
+        return this.logsClient.upload(
+          this.dcrConfig.immutableId,
+          request.streamName,
+          preparedData,
+          {
+            requestOptions: {
+              timeout: this.timeoutMs,
+            },
+          }
+        );
+      }, startTime);
 
       // Process the response
       return this.processIngestionResult(result, request, startTime);
@@ -211,6 +214,71 @@ export class AzureMonitorClient {
   }
 
   /**
+   * Execute ingestion with bounded exponential backoff retries when enabled.
+   */
+  private async executeWithRetry<T>(operation: () => Promise<T>, startTime: number): Promise<T> {
+    if (!this.enableRetry) {
+      return operation();
+    }
+
+    type RetryContextEntry = {
+      attempt: number;
+      errorMessage: string;
+      code?: string;
+      statusCode?: number;
+      retryable: boolean;
+      delayMs?: number;
+      elapsedMs: number;
+    };
+
+    const retryContext: RetryContextEntry[] = [];
+
+    const maxDelayMs = Math.min(8000, Math.max(500, Math.floor(this.timeoutMs / 2)));
+    const maxRetryWindowMs = Math.max(this.timeoutMs, this.retryBaseDelayMs);
+
+    for (let attempt = 1; attempt <= this.retryMaxAttempts; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        const retryDecision = this.isRetryableError(error);
+        const elapsedMs = Date.now() - startTime;
+        const statusCode = this.extractStatusCode(error);
+        const code = this.extractErrorCode(error);
+
+        const contextEntry: RetryContextEntry = {
+          attempt,
+          errorMessage: (error as Error).message || 'Unknown ingestion error',
+          code,
+          statusCode,
+          retryable: retryDecision,
+          elapsedMs,
+        };
+
+        retryContext.push(contextEntry);
+
+        const remainingAttempts = this.retryMaxAttempts - attempt;
+        const delayMs =
+          remainingAttempts > 0 ? this.calculateBackoffDelay(attempt - 1, maxDelayMs) : 0;
+        const nextElapsedMs = elapsedMs + delayMs;
+        contextEntry.delayMs = delayMs;
+
+        if (!retryDecision || remainingAttempts === 0 || nextElapsedMs >= maxRetryWindowMs) {
+          (error as any).retryContext = retryContext;
+          (error as any).retryAttempts = attempt;
+          (error as any).retryable = retryDecision;
+          throw error;
+        }
+
+        await this.sleep(delayMs);
+      }
+    }
+
+    const finalError = new Error('Azure Monitor ingestion failed after retries.');
+    (finalError as any).retryContext = retryContext;
+    throw finalError;
+  }
+
+  /**
    * Handle ingestion errors and convert to standardized response
    */
   private handleIngestionError(
@@ -231,21 +299,26 @@ export class AzureMonitorClient {
 
     // Parse Azure Monitor specific errors
     const azureErrors: AzureIngestionError[] = [];
+    const retryContext = error.retryContext ?? error.cause?.retryContext;
 
     if (error.code) {
       azureErrors.push({
         code: error.code,
         message: error.message || 'Unknown Azure Monitor error',
         details: {
-          statusCode: error.statusCode,
+          statusCode: error.statusCode ?? this.extractStatusCode(error),
           requestId: error.requestId || requestId,
+          retryContext,
         },
       });
     } else {
       azureErrors.push({
         code: 'INGESTION_ERROR',
         message: error.message || 'Failed to ingest data into Azure Monitor',
-        details: { originalError: error.toString() },
+        details: {
+          originalError: error.toString(),
+          retryContext,
+        },
       });
     }
 
@@ -264,6 +337,68 @@ export class AzureMonitorClient {
    */
   private generateRequestId(): string {
     return `azmon-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Determine whether an error is retryable based on Azure status codes or error codes.
+   */
+  private isRetryableError(error: any): boolean {
+    const statusCode = this.extractStatusCode(error);
+    const retryableStatusCodes = new Set([408, 429, 500, 502, 503, 504]);
+    if (statusCode && retryableStatusCodes.has(statusCode)) {
+      return true;
+    }
+
+    const retryableCodes = new Set([
+      'TooManyRequests',
+      'InternalServerError',
+      'BadGateway',
+      'ServiceUnavailable',
+      'GatewayTimeout',
+      'TimeoutError',
+      'ETIMEDOUT',
+      'ECONNRESET',
+      'ECONNREFUSED',
+      'ENOTFOUND',
+    ]);
+
+    const code = this.extractErrorCode(error);
+    if (code && retryableCodes.has(code)) {
+      return true;
+    }
+
+    const message = (error?.message || '').toLowerCase();
+    return (
+      message.includes('temporarily unavailable') ||
+      message.includes('timeout') ||
+      message.includes('timed out')
+    );
+  }
+
+  private extractStatusCode(error: any): number | undefined {
+    return (
+      error?.statusCode ??
+      error?.status ??
+      error?.response?.statusCode ??
+      error?.response?.status
+    );
+  }
+
+  private extractErrorCode(error: any): string | undefined {
+    return error?.code ?? error?.name ?? error?.details?.error?.code;
+  }
+
+  private calculateBackoffDelay(attempt: number, maxDelayMs: number): number {
+    const delay = Math.min(
+      this.retryBaseDelayMs * Math.pow(2, attempt),
+      maxDelayMs
+    );
+    const jitter = delay * 0.2 * (Math.random() - 0.5) * 2;
+    return Math.max(0, Math.round(delay + jitter));
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 
