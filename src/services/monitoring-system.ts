@@ -238,7 +238,6 @@ export class MonitoringSystem extends EventEmitter {
    */
   private registerBasicHealthCheckers(): void {
     // Metrics collector health check
-<<<<<<< HEAD
     const metricsChecker = new BasicHealthChecker(
       'metrics-collector',
       async () => {
@@ -249,11 +248,6 @@ export class MonitoringSystem extends EventEmitter {
         return this.metricsCollector.getActiveBackends().length > 0;
       }
     );
-=======
-    const metricsChecker = new BasicHealthChecker('metrics-collector', async () => {
-      return this.metricsCollector.getActiveBackends().length > 0;
-    });
->>>>>>> 0d504b9 (test)
     this.healthCheckSystem.registerChecker(metricsChecker);
 
     // Memory usage health check
@@ -325,5 +319,19 @@ export class MonitoringSystem extends EventEmitter {
         threshold: 5000,
       });
     }
+  }
+
+  /**
+   * Start the monitoring system (alias for initialize)
+   */
+  public async start(): Promise<void> {
+    return this.initialize();
+  }
+
+  /**
+   * Stop the monitoring system (alias for shutdown)
+   */
+  public async stop(): Promise<void> {
+    return this.shutdown();
   }
 }

@@ -12,7 +12,7 @@ import { RetryHandler } from '../../services/retry-handler';
 import { DeduplicationService } from '../../services/deduplication-service';
 import { AzureMonitorClient } from '../../services/azure-monitor-client';
 import { StructuredLogger } from '../../services/structured-logger';
-import { HealthCheck, ComponentHealth } from '../../services/health-check';
+import { HealthCheckSystem } from '../../services/health-check';
 import { MetricsCollector } from '../../services/metrics-collector';
 
 import { AzureFunctionConfig } from './config';
@@ -41,7 +41,7 @@ export class GuardDutyProcessor {
   constructor(
     private config: AzureFunctionConfig,
     private logger: StructuredLogger,
-    private healthCheck: HealthCheck
+    private healthCheck: HealthCheckSystem
   ) {
     // Initialize services
     this.s3Service = new S3Service({
@@ -72,6 +72,12 @@ export class GuardDutyProcessor {
 
     if (config.worker.deduplication?.enabled) {
       this.deduplicationService = new DeduplicationService(config.worker.deduplication);
+    } else {
+      // Initialize with disabled deduplication
+      this.deduplicationService = new DeduplicationService({
+        enabled: false,
+        strategy: 'findingId'
+      });
     }
 
     this.azureClient = new AzureMonitorClient({
@@ -83,6 +89,7 @@ export class GuardDutyProcessor {
 
     this.metricsCollector = new MetricsCollector({
       enableMetrics: config.worker.monitoring?.enableMetrics ?? true,
+      enableDetailedLogging: false,
       metricsBackend: config.worker.monitoring?.metricsBackend
     });
 
