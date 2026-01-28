@@ -215,6 +215,24 @@ describe('MonitoringSystem', () => {
     });
   });
 
+  describe('metrics disabled', () => {
+    it('should treat metrics collector as healthy when metrics are disabled', async () => {
+      const disabledMetricsSystem = new MonitoringSystem({
+        ...config,
+        enableMetrics: false
+      });
+
+      await disabledMetricsSystem.initialize();
+
+      const healthStatus = await disabledMetricsSystem.getHealthCheckSystem().performHealthCheck();
+
+      expect(disabledMetricsSystem.getMetricsCollector().getActiveBackends()).toHaveLength(0);
+      expect(healthStatus.status).toBe('healthy');
+
+      await disabledMetricsSystem.shutdown();
+    });
+  });
+
   describe('error handling', () => {
     it('should handle initialization errors', async () => {
       // Create a monitoring system with invalid config

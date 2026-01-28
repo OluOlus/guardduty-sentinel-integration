@@ -3,7 +3,7 @@
     "target": "ES2020",
     "module": "commonjs",
     "lib": ["ES2020"],
-    "outDir": "guardduty-sentinel-integration./dist",
+    "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,
     "esModuleInterop": true,
@@ -23,7 +23,7 @@
   ],
   "exclude": [
     "node_modules",
-    "guardduty-sentinel-integration./dist",
+    "dist",
     "tests"
   ]
 }
