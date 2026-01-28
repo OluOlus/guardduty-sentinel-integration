@@ -6,7 +6,8 @@
  */
 
 import { EventEmitter } from 'events';
-import { createServer, Server, IncomingMessage, ServerResponse } from 'http';
+import { createServer, Server, IncomingMessage, ServerResponse, request as httpRequest } from 'http';
+import { request as httpsRequest } from 'https';
 import { HealthCheckStatus, ComponentHealth, MonitoringConfig } from '../types/configuration.js';
 import { StructuredLogger } from './structured-logger.js';
 
@@ -402,30 +403,14 @@ export class BasicHealthChecker implements HealthChecker {
 
   public async check(): Promise<ComponentHealth> {
     const startTime = Date.now();
-<<<<<<< HEAD
     let timeoutId: NodeJS.Timeout | undefined;
-    
-=======
-
->>>>>>> 0d504b9 (test)
     try {
       // Run check with timeout
       const result = await Promise.race([
         this.checkFunction(),
-<<<<<<< HEAD
-        new Promise<boolean>((_, reject) => 
-          {
-            timeoutId = setTimeout(
-              () => reject(new Error('Health check timeout')),
-              this.timeout
-            );
-          }
-        )
-=======
-        new Promise<boolean>((_, reject) =>
-          setTimeout(() => reject(new Error('Health check timeout')), this.timeout)
-        ),
->>>>>>> 0d504b9 (test)
+        new Promise<boolean>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Health check timeout')), this.timeout);
+        }),
       ]);
 
       const responseTime = Date.now() - startTime;
@@ -504,15 +489,50 @@ export class HttpHealthChecker implements HealthChecker {
   }
 
   private async makeHttpRequest(): Promise<{ status: number }> {
-    // Simple implementation - in a real scenario, you'd use a proper HTTP client
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Request timeout'));
+      const targetUrl = new URL(this.url);
+      const requestFn = targetUrl.protocol === 'https:' ? httpsRequest : httpRequest;
+      let settled = false;
+      const finalize = (action: () => void) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timeoutId);
+        action();
+      };
+      const req = requestFn(targetUrl, (res) => {
+        const status = res.statusCode;
+
+        res.on('data', () => undefined);
+        res.on('end', () => {
+          if (typeof status !== 'number') {
+            finalize(() => reject(new Error('Response missing status code')));
+            return;
+          }
+
+          finalize(() => resolve({ status }));
+        });
+        res.on('error', (error) => {
+          finalize(() => reject(error));
+        });
+        res.on('close', () => {
+          finalize(() => reject(new Error('Response closed before completion')));
+        });
+      });
+
+      const timeoutId = setTimeout(() => {
+        finalize(() => {
+          req.destroy();
+          reject(new Error('Request timeout'));
+        });
       }, this.timeout);
 
-      // Mock implementation - replace with actual HTTP request
-      clearTimeout(timeout);
-      resolve({ status: 200 });
+      req.on('error', (error) => {
+        finalize(() => reject(error));
+      });
+
+      req.end();
     });
   }
 }
