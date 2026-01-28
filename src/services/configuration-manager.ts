@@ -195,17 +195,20 @@ export class ConfigurationManager {
       config.azureEndpoint = process.env.AZURE_ENDPOINT;
     }
 
-    // DCR configuration
-    if (process.env.DCR_IMMUTABLE_ID || process.env.DCR_STREAM_NAME || process.env.DCR_ENDPOINT) {
+    // DCR configuration (AZURE_DCR_*)
+    const dcrImmutableId = process.env.AZURE_DCR_IMMUTABLE_ID;
+    const dcrStreamName = process.env.AZURE_DCR_STREAM_NAME;
+    const dcrEndpoint = process.env.AZURE_DCR_ENDPOINT;
+    if (dcrImmutableId || dcrStreamName || dcrEndpoint) {
       config.dcr = {} as DataCollectionRuleConfig;
-      if (process.env.DCR_IMMUTABLE_ID) {
-        config.dcr.immutableId = process.env.DCR_IMMUTABLE_ID;
+      if (dcrImmutableId) {
+        config.dcr.immutableId = dcrImmutableId;
       }
-      if (process.env.DCR_STREAM_NAME) {
-        config.dcr.streamName = process.env.DCR_STREAM_NAME;
+      if (dcrStreamName) {
+        config.dcr.streamName = dcrStreamName;
       }
-      if (process.env.DCR_ENDPOINT) {
-        config.dcr.endpoint = process.env.DCR_ENDPOINT;
+      if (dcrEndpoint) {
+        config.dcr.endpoint = dcrEndpoint;
       }
     }
 
