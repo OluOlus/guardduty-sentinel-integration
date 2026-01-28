@@ -287,6 +287,7 @@ export function createAzureMonitorClient(options: AzureMonitorClientOptions): Az
 
 /**
  * Helper function to create DCR configuration from environment variables
+ * Uses AZURE_DCR_* variables to match documented configuration.
  */
 export function createDcrConfigFromEnv(): DataCollectionRuleConfig {
   const immutableId = process.env.AZURE_DCR_IMMUTABLE_ID;
