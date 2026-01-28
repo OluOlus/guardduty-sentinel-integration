@@ -28,15 +28,20 @@ async function initializeProcessor(): Promise<void> {
 
   try {
     const config = createConfigFromEnvironment();
-    logger = new StructuredLogger({
-      level: config.logLevel,
-      enableConsole: true,
-      enableStructured: true
-    });
+    const monitoringConfig = {
+      enableMetrics: config.worker.monitoring?.enableMetrics ?? true,
+      enableDetailedLogging: config.logLevel === 'debug',
+      healthCheckPort: config.worker.monitoring?.healthCheckPort,
+      metricsBackend: config.worker.monitoring?.metricsBackend
+    };
+
+    logger = new StructuredLogger('azure-function-worker', monitoringConfig);
 
     healthCheck = new HealthCheck({
       port: 0, // Not used in Azure Functions
-      enableEndpoint: false
+      enableEndpoint: false,
+      enableDetailedLogging: monitoringConfig.enableDetailedLogging,
+      logger
     });
 
     processor = new GuardDutyProcessor(config, logger, healthCheck);

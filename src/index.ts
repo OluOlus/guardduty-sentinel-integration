@@ -63,12 +63,18 @@ export class GuardDutyIntegrationApp {
         configResult.warnings.forEach(warning => console.warn(`   ${warning}`));
       }
 
+      const monitoringConfig = {
+        enableMetrics: configResult.config.monitoring?.enableMetrics ?? true,
+        enableDetailedLogging: configResult.config.monitoring?.enableDetailedLogging ?? false,
+        healthCheckPort: configResult.config.monitoring?.healthCheckPort ?? 8080,
+        metricsBackend: configResult.config.monitoring?.metricsBackend
+      };
+
+      // Initialize monitoring system
+      const monitoringSystem = new MonitoringSystem(monitoringConfig);
+
       // Initialize structured logger
-      const logger = new StructuredLogger({
-        level: 'info',
-        enableConsole: true,
-        enableStructured: true
-      });
+      const logger = new StructuredLogger('guardduty-integration', monitoringConfig);
 
       logger.info('Configuration loaded successfully', {
         sources: configResult.sources.map(s => ({ type: s.type, location: s.location })),
@@ -76,24 +82,10 @@ export class GuardDutyIntegrationApp {
       });
 
       // Initialize health check system
-      const healthCheck = new HealthCheck({
-        port: configResult.config.monitoring?.healthCheckPort || 8080,
-        enableEndpoint: this.config.workerType !== 'lambda' // Lambda doesn't need HTTP endpoint
-      });
+      const healthCheck = HealthCheck.fromSystem(monitoringSystem.getHealthCheckSystem());
 
       // Initialize metrics collector
-      const metricsCollector = new MetricsCollector({
-        enableMetrics: configResult.config.monitoring?.enableMetrics ?? true,
-        metricsBackend: configResult.config.monitoring?.metricsBackend
-      });
-
-      // Initialize monitoring system
-      const monitoringSystem = new MonitoringSystem({
-        logger,
-        healthCheck,
-        metricsCollector,
-        enableDetailedLogging: configResult.config.monitoring?.enableDetailedLogging ?? false
-      });
+      const metricsCollector = monitoringSystem.getMetricsCollector();
 
       // Create application context
       this.context = {

@@ -123,6 +123,18 @@ export class MetricsCollector extends EventEmitter {
   }
 
   /**
+   * Increment a counter metric by the specified value
+   */
+  public incrementCounter(
+    name: string,
+    value: number = 1,
+    tags?: Record<string, string>,
+    description?: string
+  ): void {
+    this.recordCounter(name, value, tags, description);
+  }
+
+  /**
    * Record a gauge metric (point-in-time value)
    */
   public recordGauge(
@@ -294,6 +306,13 @@ export class MetricsCollector extends EventEmitter {
         console.error(`Failed to flush metrics to backend ${backendName}:`, error);
       }
     }
+  }
+
+  /**
+   * Get a snapshot of the current metrics buffer
+   */
+  public getMetrics(): MetricValue[] {
+    return [...this.metricsBuffer];
   }
 
   /**

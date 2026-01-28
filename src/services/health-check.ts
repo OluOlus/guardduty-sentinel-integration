@@ -11,6 +11,15 @@ import { request as httpsRequest } from 'https';
 import { HealthCheckStatus, ComponentHealth, MonitoringConfig } from '../types/configuration.js';
 import { StructuredLogger } from './structured-logger.js';
 
+export type { ComponentHealth, HealthCheckStatus };
+
+export interface HealthCheckConfig {
+  port?: number;
+  enableEndpoint?: boolean;
+  enableDetailedLogging?: boolean;
+  logger?: StructuredLogger;
+}
+
 export interface HealthChecker {
   /** Component name */
   name: string;
@@ -388,6 +397,61 @@ export class HealthCheckSystem extends EventEmitter {
 }
 
 /**
+ * Legacy-compatible health check wrapper used by workers.
+ */
+export class HealthCheck {
+  private readonly system: HealthCheckSystem;
+  private readonly ownsSystem: boolean;
+
+  constructor(config: HealthCheckConfig = {}, system?: HealthCheckSystem) {
+    if (system) {
+      this.system = system;
+      this.ownsSystem = false;
+      return;
+    }
+
+    const monitoringConfig: MonitoringConfig = {
+      enableMetrics: false,
+      enableDetailedLogging: config.enableDetailedLogging ?? false,
+      healthCheckPort: config.enableEndpoint === false ? undefined : config.port ?? 8080,
+    };
+
+    const logger = config.logger ?? new StructuredLogger('health-check', monitoringConfig);
+
+    this.system = new HealthCheckSystem(monitoringConfig, logger);
+    this.ownsSystem = true;
+  }
+
+  public static fromSystem(system: HealthCheckSystem): HealthCheck {
+    return new HealthCheck({}, system);
+  }
+
+  public async start(): Promise<void> {
+    if (this.ownsSystem) {
+      await this.system.start();
+    }
+  }
+
+  public async stop(): Promise<void> {
+    if (this.ownsSystem) {
+      await this.system.stop();
+    }
+  }
+
+  public registerChecker(checker: HealthChecker): void {
+    this.system.registerChecker(checker);
+  }
+
+  public unregisterChecker(name: string): void {
+    this.system.unregisterChecker(name);
+  }
+
+  public async getHealthStatus(): Promise<HealthCheckStatus> {
+    return this.system.getCurrentHealth();
+  }
+}
+
+/**
  * Basic health checker implementation
  */
 export class BasicHealthChecker implements HealthChecker {
@@ -496,12 +560,15 @@ export class HttpHealthChecker implements HealthChecker {
       const targetUrl = new URL(this.url);
       const requestFn = targetUrl.protocol === 'https:' ? httpsRequest : httpRequest;
       let settled = false;
+      let timeoutId: NodeJS.Timeout | undefined;
       const finalize = (action: () => void) => {
         if (settled) {
           return;
         }
         settled = true;
-        clearTimeout(timeoutId);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
         action();
       };
       const req = requestFn(targetUrl, (res) => {
@@ -524,7 +591,7 @@ export class HttpHealthChecker implements HealthChecker {
         });
       });
 
-      const timeoutId = setTimeout(() => {
+      timeoutId = setTimeout(() => {
         finalize(() => {
           req.destroy();
           reject(new Error('Request timeout'));

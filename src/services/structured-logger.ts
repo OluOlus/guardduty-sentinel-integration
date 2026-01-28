@@ -131,15 +131,33 @@ export class StructuredLogger extends EventEmitter {
   /**
    * Log an error message
    */
-  public error(message: string, error?: Error, context?: Record<string, unknown>): void {
-    this.log('error', message, context, error);
+  public error(
+    message: string,
+    errorOrContext?: Error | Record<string, unknown>,
+    context?: Record<string, unknown>
+  ): void {
+    if (errorOrContext instanceof Error || errorOrContext === undefined) {
+      this.log('error', message, context, errorOrContext);
+      return;
+    }
+
+    this.log('error', message, errorOrContext);
   }
 
   /**
    * Log a fatal error message
    */
-  public fatal(message: string, error?: Error, context?: Record<string, unknown>): void {
-    this.log('fatal', message, context, error);
+  public fatal(
+    message: string,
+    errorOrContext?: Error | Record<string, unknown>,
+    context?: Record<string, unknown>
+  ): void {
+    if (errorOrContext instanceof Error || errorOrContext === undefined) {
+      this.log('fatal', message, context, errorOrContext);
+      return;
+    }
+
+    this.log('fatal', message, errorOrContext);
   }
 
   /**

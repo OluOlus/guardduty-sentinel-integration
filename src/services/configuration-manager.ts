@@ -195,10 +195,10 @@ export class ConfigurationManager {
       config.azureEndpoint = process.env.AZURE_ENDPOINT;
     }
 
-    // DCR configuration (AZURE_DCR_*)
-    const dcrImmutableId = process.env.AZURE_DCR_IMMUTABLE_ID;
-    const dcrStreamName = process.env.AZURE_DCR_STREAM_NAME;
-    const dcrEndpoint = process.env.AZURE_DCR_ENDPOINT;
+    // DCR configuration (prefer AZURE_DCR_* but accept legacy DCR_*)
+    const dcrImmutableId = process.env.AZURE_DCR_IMMUTABLE_ID ?? process.env.DCR_IMMUTABLE_ID;
+    const dcrStreamName = process.env.AZURE_DCR_STREAM_NAME ?? process.env.DCR_STREAM_NAME;
+    const dcrEndpoint = process.env.AZURE_DCR_ENDPOINT ?? process.env.DCR_ENDPOINT;
     if (dcrImmutableId || dcrStreamName || dcrEndpoint) {
       config.dcr = {} as DataCollectionRuleConfig;
       if (dcrImmutableId) {

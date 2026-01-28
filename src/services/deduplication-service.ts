@@ -116,6 +116,26 @@ export class DeduplicationService extends EventEmitter {
   }
 
   /**
+   * Deduplicate a list of findings and return only unique entries
+   */
+  public async deduplicateFindings(
+    findings: GuardDutyFinding[]
+  ): Promise<GuardDutyFinding[]> {
+    if (!this.config.enabled) {
+      return findings;
+    }
+
+    const uniqueFindings: GuardDutyFinding[] = [];
+    for (const finding of findings) {
+      if (!this.isDuplicate(finding)) {
+        uniqueFindings.push(finding);
+      }
+    }
+
+    return uniqueFindings;
+  }
+
+  /**
    * Generate deduplication key based on strategy
    */
   private generateDeduplicationKey(finding: GuardDutyFinding): string {

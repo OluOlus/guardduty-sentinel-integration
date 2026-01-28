@@ -7,7 +7,7 @@
  * Requirements: 3.1, 4.1
  */
 
-import express from 'express';
+import express, { NextFunction, Request, Response } from 'express';
 import { GuardDutyProcessor } from './processor';
 import { ContainerConfig, createConfigFromEnvironment } from './config';
 import { StructuredLogger } from '../../services/structured-logger';
@@ -76,7 +76,7 @@ function setupExpressApp(config: ContainerConfig): void {
   app.use(express.urlencoded({ extended: true }));
 
   // Request logging middleware
-  app.use((req, res, next) => {
+  app.use((req: Request, res: Response, next: NextFunction) => {
     const startTime = Date.now();
     
     res.on('finish', () => {
@@ -100,7 +100,7 @@ function setupExpressApp(config: ContainerConfig): void {
   });
 
   // Health check endpoint
-  app.get('/health', async (req, res) => {
+  app.get('/health', async (_req: Request, res: Response) => {
     try {
       if (!healthCheck || !processor) {
         return res.status(503).json({
@@ -150,7 +150,7 @@ function setupExpressApp(config: ContainerConfig): void {
   });
 
   // Readiness probe endpoint
-  app.get('/ready', async (req, res) => {
+  app.get('/ready', async (_req: Request, res: Response) => {
     try {
       if (!processor) {
         return res.status(503).json({
@@ -179,7 +179,7 @@ function setupExpressApp(config: ContainerConfig): void {
   });
 
   // Metrics endpoint (Prometheus format)
-  app.get('/metrics', async (req, res) => {
+  app.get('/metrics', async (_req: Request, res: Response) => {
     try {
       if (!metricsCollector) {
         return res.status(503).text('Metrics collector not initialized');
@@ -196,7 +196,7 @@ function setupExpressApp(config: ContainerConfig): void {
   });
 
   // Process S3 objects endpoint
-  app.post('/process', async (req, res) => {
+  app.post('/process', async (req: Request, res: Response) => {
     const startTime = Date.now();
     
     try {
@@ -277,7 +277,7 @@ function setupExpressApp(config: ContainerConfig): void {
   });
 
   // Webhook endpoint for S3 events
-  app.post('/webhook/s3', async (req, res) => {
+  app.post('/webhook/s3', async (req: Request, res: Response) => {
     try {
       if (!processor || !logger) {
         return res.status(503).json({
@@ -345,7 +345,7 @@ function setupExpressApp(config: ContainerConfig): void {
   });
 
   // 404 handler
-  app.use((req, res) => {
+  app.use((req: Request, res: Response) => {
     res.status(404).json({
       error: 'Not Found',
       path: req.path,
@@ -354,7 +354,7 @@ function setupExpressApp(config: ContainerConfig): void {
   });
 
   // Error handler
-  app.use((error: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  app.use((error: Error, req: Request, res: Response, _next: NextFunction) => {
     logger?.error('Express error handler', {
       error: error.message,
       stack: error.stack,

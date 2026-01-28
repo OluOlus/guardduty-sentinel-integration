@@ -425,9 +425,9 @@ export function createAzureMonitorClient(options: AzureMonitorClientOptions): Az
  * Uses AZURE_DCR_* variables to match documented configuration.
  */
 export function createDcrConfigFromEnv(): DataCollectionRuleConfig {
-  const immutableId = process.env.AZURE_DCR_IMMUTABLE_ID;
-  const streamName = process.env.AZURE_DCR_STREAM_NAME;
-  const endpoint = process.env.AZURE_DCR_ENDPOINT;
+  const immutableId = process.env.AZURE_DCR_IMMUTABLE_ID ?? process.env.DCR_IMMUTABLE_ID;
+  const streamName = process.env.AZURE_DCR_STREAM_NAME ?? process.env.DCR_STREAM_NAME;
+  const endpoint = process.env.AZURE_DCR_ENDPOINT ?? process.env.DCR_ENDPOINT;
 
   if (!immutableId || !streamName) {
     throw new Error(

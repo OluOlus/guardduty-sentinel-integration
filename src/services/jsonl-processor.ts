@@ -119,6 +119,17 @@ export class JSONLProcessor {
   }
 
   /**
+   * Process a JSONL stream and return findings only
+   */
+  async processStream(
+    stream: Readable,
+    compressionType: 'gzip' | 'deflate' | 'none' = 'gzip'
+  ): Promise<GuardDutyFinding[]> {
+    const result = await this.processCompressedStream(stream, compressionType);
+    return result.findings;
+  }
+
+  /**
    * Processes a JSONL stream with callback-based handling for memory efficiency
    */
   async processStreamWithCallback(

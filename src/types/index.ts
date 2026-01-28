@@ -38,13 +38,3 @@ export interface ValidationError {
   message: string;
   code: string;
 }
-
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'fatal';
-
-export interface LogEntry {
-  level: LogLevel;
-  message: string;
-  timestamp: Date;
-  context?: Record<string, unknown>;
-  error?: Error;
-}

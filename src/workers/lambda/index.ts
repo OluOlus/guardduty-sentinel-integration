@@ -28,17 +28,16 @@ async function initializeProcessor(): Promise<void> {
 
   try {
     const config = createConfigFromEnvironment();
-    
-    logger = new StructuredLogger({
-      level: config.logLevel,
-      enableConsole: true,
-      enableStructured: true
-    });
-
-    metricsCollector = new MetricsCollector({
+    const monitoringConfig = {
       enableMetrics: config.worker.monitoring?.enableMetrics ?? true,
+      enableDetailedLogging: config.logLevel === 'debug',
+      healthCheckPort: config.worker.monitoring?.healthCheckPort,
       metricsBackend: config.worker.monitoring?.metricsBackend
-    });
+    };
+
+    logger = new StructuredLogger('lambda-worker', monitoringConfig);
+
+    metricsCollector = new MetricsCollector(monitoringConfig);
 
     processor = new GuardDutyProcessor(config, logger, metricsCollector);
     await processor.initialize();

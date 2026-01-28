@@ -33,7 +33,7 @@ export class GuardDutyProcessor {
   private dataTransformer: DataTransformer;
   private batchProcessor: BatchProcessor;
   private retryHandler: RetryHandler;
-  private deduplicationService: DeduplicationService;
+  private deduplicationService?: DeduplicationService;
   private azureClient: AzureMonitorClient;
   private metricsCollector: MetricsCollector;
   private initialized = false;
@@ -81,10 +81,14 @@ export class GuardDutyProcessor {
       enableRetry: true
     });
 
-    this.metricsCollector = new MetricsCollector({
+    const monitoringConfig = {
       enableMetrics: config.worker.monitoring?.enableMetrics ?? true,
+      enableDetailedLogging: config.worker.monitoring?.enableDetailedLogging ?? false,
+      healthCheckPort: config.worker.monitoring?.healthCheckPort,
       metricsBackend: config.worker.monitoring?.metricsBackend
-    });
+    };
+
+    this.metricsCollector = new MetricsCollector(monitoringConfig);
 
     // Set up event handlers
     this.setupEventHandlers();
@@ -336,6 +340,7 @@ export class GuardDutyProcessor {
    * Process a batch of S3 objects
    */
   private async processS3ObjectBatch(s3Objects: S3ObjectInfo[]): Promise<ProcessingResult> {
+    const startTime = Date.now();
     const errors: string[] = [];
     let processedBatches = 0;
     let totalFindings = 0;
@@ -376,7 +381,8 @@ export class GuardDutyProcessor {
     return {
       processedBatches,
       totalFindings,
-      errors
+      errors,
+      duration: Date.now() - startTime
     };
   }
 
@@ -460,7 +466,16 @@ export class GuardDutyProcessor {
     }
 
     // Transform findings
-    const transformedFindings = this.dataTransformer.transformFindings(processedFindings);
+    const transformedResult = await this.dataTransformer.transformFindings(processedFindings);
+    const transformedFindings = transformedResult.data;
+
+    if (transformedResult.errors.length > 0) {
+      this.logger.warn('Some findings failed transformation', {
+        batchId: batch.batchId,
+        failedCount: transformedResult.failedCount,
+        total: processedFindings.length
+      });
+    }
 
     // Prepare Azure ingestion request
     const ingestionRequest: AzureMonitorIngestionRequest = {
@@ -475,7 +490,8 @@ export class GuardDutyProcessor {
         const result = await this.azureClient.ingestData(ingestionRequest);
         
         if (result.status === 'failed') {
-          throw new Error(`Azure ingestion failed: ${result.errors.map(e => e.message).join(', ')}`);
+          const errorMessages = result.errors?.map((entry) => entry.message) ?? ['Unknown error'];
+          throw new Error(`Azure ingestion failed: ${errorMessages.join(', ')}`);
         }
         
         this.logger.info('Successfully ingested batch to Azure', {
