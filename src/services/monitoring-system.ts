@@ -233,6 +233,10 @@ export class MonitoringSystem extends EventEmitter {
     const metricsChecker = new BasicHealthChecker(
       'metrics-collector',
       async () => {
+        if (!this.config.enableMetrics) {
+          return true;
+        }
+
         return this.metricsCollector.getActiveBackends().length > 0;
       }
     );
