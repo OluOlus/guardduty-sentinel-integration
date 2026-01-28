@@ -1,15 +1,15 @@
 /**
  * Metrics collection system with configurable backends
- * 
+ *
  * Provides comprehensive metrics collection for the GuardDuty to Sentinel integration,
  * supporting multiple backend types including console, Prometheus, CloudWatch, and Azure Monitor.
  */
 
 import { EventEmitter } from 'events';
-import { 
-  MetricsBackendConfig, 
-  ProcessingMetrics, 
-  MonitoringConfig 
+import {
+  MetricsBackendConfig,
+  ProcessingMetrics,
+  MonitoringConfig,
 } from '../types/configuration.js';
 
 export interface MetricValue {
@@ -51,11 +51,10 @@ export interface MetricsCollectorEvents {
 }
 
 export declare interface MetricsCollector {
-  on<U extends keyof MetricsCollectorEvents>(
-    event: U, listener: MetricsCollectorEvents[U]
-  ): this;
+  on<U extends keyof MetricsCollectorEvents>(event: U, listener: MetricsCollectorEvents[U]): this;
   emit<U extends keyof MetricsCollectorEvents>(
-    event: U, ...args: Parameters<MetricsCollectorEvents[U]>
+    event: U,
+    ...args: Parameters<MetricsCollectorEvents[U]>
   ): boolean;
 }
 
@@ -108,8 +107,8 @@ export class MetricsCollector extends EventEmitter {
    * Record a counter metric (monotonically increasing value)
    */
   public recordCounter(
-    name: string, 
-    value: number = 1, 
+    name: string,
+    value: number = 1,
     tags?: Record<string, string>,
     description?: string
   ): void {
@@ -119,7 +118,7 @@ export class MetricsCollector extends EventEmitter {
       type: 'counter',
       tags,
       timestamp: new Date(),
-      description
+      description,
     });
   }
 
@@ -127,8 +126,8 @@ export class MetricsCollector extends EventEmitter {
    * Record a gauge metric (point-in-time value)
    */
   public recordGauge(
-    name: string, 
-    value: number, 
+    name: string,
+    value: number,
     tags?: Record<string, string>,
     unit?: string,
     description?: string
@@ -140,7 +139,7 @@ export class MetricsCollector extends EventEmitter {
       tags,
       timestamp: new Date(),
       unit,
-      description
+      description,
     });
   }
 
@@ -148,8 +147,8 @@ export class MetricsCollector extends EventEmitter {
    * Record a timer metric (duration measurement)
    */
   public recordTimer(
-    name: string, 
-    durationMs: number, 
+    name: string,
+    durationMs: number,
     tags?: Record<string, string>,
     description?: string
   ): void {
@@ -160,7 +159,7 @@ export class MetricsCollector extends EventEmitter {
       tags,
       timestamp: new Date(),
       unit: 'milliseconds',
-      description
+      description,
     });
   }
 
@@ -168,8 +167,8 @@ export class MetricsCollector extends EventEmitter {
    * Record a histogram metric (distribution of values)
    */
   public recordHistogram(
-    name: string, 
-    value: number, 
+    name: string,
+    value: number,
     tags?: Record<string, string>,
     unit?: string,
     description?: string
@@ -181,7 +180,7 @@ export class MetricsCollector extends EventEmitter {
       tags,
       timestamp: new Date(),
       unit,
-      description
+      description,
     });
   }
 
@@ -190,13 +189,49 @@ export class MetricsCollector extends EventEmitter {
    */
   public recordProcessingMetrics(metrics: ProcessingMetrics): void {
     const tags = { component: 'processing' };
-    
-    this.recordGauge('findings.processed.total', metrics.totalProcessed, tags, 'count', 'Total findings processed');
-    this.recordGauge('findings.errors.total', metrics.totalErrors, tags, 'count', 'Total processing errors');
-    this.recordGauge('findings.success_rate', metrics.successRate, tags, 'ratio', 'Processing success rate');
-    this.recordGauge('findings.processing_time.avg', metrics.avgProcessingTimeMs, tags, 'milliseconds', 'Average processing time per finding');
-    this.recordGauge('findings.queue_size', metrics.queueSize, tags, 'count', 'Current batch queue size');
-    this.recordGauge('findings.throughput', metrics.throughput, tags, 'per_second', 'Findings processed per second');
+
+    this.recordGauge(
+      'findings.processed.total',
+      metrics.totalProcessed,
+      tags,
+      'count',
+      'Total findings processed'
+    );
+    this.recordGauge(
+      'findings.errors.total',
+      metrics.totalErrors,
+      tags,
+      'count',
+      'Total processing errors'
+    );
+    this.recordGauge(
+      'findings.success_rate',
+      metrics.successRate,
+      tags,
+      'ratio',
+      'Processing success rate'
+    );
+    this.recordGauge(
+      'findings.processing_time.avg',
+      metrics.avgProcessingTimeMs,
+      tags,
+      'milliseconds',
+      'Average processing time per finding'
+    );
+    this.recordGauge(
+      'findings.queue_size',
+      metrics.queueSize,
+      tags,
+      'count',
+      'Current batch queue size'
+    );
+    this.recordGauge(
+      'findings.throughput',
+      metrics.throughput,
+      tags,
+      'per_second',
+      'Findings processed per second'
+    );
   }
 
   /**
@@ -233,7 +268,7 @@ export class MetricsCollector extends EventEmitter {
 
     // Flush if buffer is full
     if (this.metricsBuffer.length >= this.maxBufferSize) {
-      this.flushMetrics().catch(error => {
+      this.flushMetrics().catch((error) => {
         console.error('Failed to flush metrics:', error);
       });
     }
@@ -248,7 +283,7 @@ export class MetricsCollector extends EventEmitter {
     }
 
     const metricsToFlush = this.metricsBuffer.splice(0);
-    
+
     for (const [backendName, backend] of this.backends) {
       try {
         await backend.recordMetrics(metricsToFlush);
@@ -324,7 +359,7 @@ export class MetricsCollector extends EventEmitter {
    */
   private startFlushTimer(): void {
     this.flushTimer = setInterval(() => {
-      this.flushMetrics().catch(error => {
+      this.flushMetrics().catch((error) => {
         console.error('Failed to flush metrics on timer:', error);
       });
     }, this.flushIntervalMs);
@@ -347,11 +382,17 @@ export class ConsoleMetricsBackend implements MetricsBackend {
   }
 
   public async recordMetric(metric: MetricValue): Promise<void> {
-    const tags = metric.tags ? Object.entries(metric.tags).map(([k, v]) => `${k}=${v}`).join(',') : '';
+    const tags = metric.tags
+      ? Object.entries(metric.tags)
+          .map(([k, v]) => `${k}=${v}`)
+          .join(',')
+      : '';
     const tagsStr = tags ? ` {${tags}}` : '';
     const unit = metric.unit ? ` ${metric.unit}` : '';
-    
-    console.log(`[METRIC] ${metric.name}${tagsStr}: ${metric.value}${unit} (${metric.type}) - ${metric.timestamp.toISOString()}`);
+
+    console.log(
+      `[METRIC] ${metric.name}${tagsStr}: ${metric.value}${unit} (${metric.type}) - ${metric.timestamp.toISOString()}`
+    );
   }
 
   public async recordMetrics(metrics: MetricValue[]): Promise<void> {

@@ -13,12 +13,9 @@ export interface RetryHandlerEvents {
 }
 
 export declare interface RetryHandler {
-  on<U extends keyof RetryHandlerEvents>(
-    event: U, 
-    listener: RetryHandlerEvents[U]
-  ): this;
+  on<U extends keyof RetryHandlerEvents>(event: U, listener: RetryHandlerEvents[U]): this;
   emit<U extends keyof RetryHandlerEvents>(
-    event: U, 
+    event: U,
     ...args: Parameters<RetryHandlerEvents[U]>
   ): boolean;
 }
@@ -40,38 +37,35 @@ export class RetryHandler extends EventEmitter {
   /**
    * Execute an operation with retry logic
    */
-  public async executeWithRetry<T>(
-    operation: () => Promise<T>,
-    context?: string
-  ): Promise<T> {
+  public async executeWithRetry<T>(operation: () => Promise<T>, context?: string): Promise<T> {
     let lastError: Error;
-    
+
     for (let attempt = 0; attempt <= this.policy.maxRetries; attempt++) {
       try {
         return await operation();
       } catch (error) {
         lastError = error as Error;
-        
+
         // Check if error is retryable
         if (!this.isRetryableError(lastError)) {
           throw lastError;
         }
-        
+
         // If this was the last attempt, don't retry
         if (attempt === this.policy.maxRetries) {
           break;
         }
-        
+
         // Calculate delay for next attempt
         const delayMs = this.calculateBackoffDelay(attempt);
-        
+
         this.emit('retry-attempt', attempt + 1, lastError, delayMs);
-        
+
         // Wait before retrying
         await this.sleep(delayMs);
       }
     }
-    
+
     // All retries exhausted
     this.emit('retry-exhausted', lastError!, this.policy.maxRetries + 1);
     throw lastError!;
@@ -93,7 +87,7 @@ export class RetryHandler extends EventEmitter {
         this.emit('dead-letter-queued', item, error as Error);
         return null; // Indicate item was sent to DLQ
       }
-      
+
       // Re-throw if no DLQ available
       throw error;
     }
@@ -105,10 +99,10 @@ export class RetryHandler extends EventEmitter {
   private calculateBackoffDelay(attempt: number): number {
     // Exponential backoff: initialDelay * (multiplier ^ attempt)
     let delay = this.policy.initialBackoffMs * Math.pow(this.policy.backoffMultiplier, attempt);
-    
+
     // Cap at maximum backoff
     delay = Math.min(delay, this.policy.maxBackoffMs);
-    
+
     // Add jitter to prevent thundering herd
     if (this.policy.enableJitter) {
       // Add random jitter of ±25% of the delay
@@ -116,7 +110,7 @@ export class RetryHandler extends EventEmitter {
       const jitter = (Math.random() - 0.5) * 2 * jitterRange;
       delay += jitter;
     }
-    
+
     // Ensure delay is not negative
     return Math.max(delay, 0);
   }
@@ -129,17 +123,17 @@ export class RetryHandler extends EventEmitter {
     if (this.policy.retryableErrors.length === 0) {
       return true;
     }
-    
+
     // Check if error code/message matches retryable patterns
     const errorCode = (error as any).code || error.name || 'UNKNOWN_ERROR';
     const errorMessage = error.message || '';
-    
-    return this.policy.retryableErrors.some(pattern => {
+
+    return this.policy.retryableErrors.some((pattern) => {
       // Skip empty or whitespace-only patterns
       if (!pattern || pattern.trim().length === 0) {
         return false;
       }
-      
+
       // Support both exact matches and regex patterns
       if (pattern.startsWith('/') && pattern.endsWith('/')) {
         // Regex pattern
@@ -147,8 +141,10 @@ export class RetryHandler extends EventEmitter {
         return regex.test(errorCode) || regex.test(errorMessage);
       } else {
         // Exact match for error codes, substring match for meaningful error messages
-        return errorCode.toLowerCase() === pattern.toLowerCase() ||
-               (pattern.trim().length > 1 && errorMessage.toLowerCase().includes(pattern.toLowerCase()));
+        return (
+          errorCode.toLowerCase() === pattern.toLowerCase() ||
+          (pattern.trim().length > 1 && errorMessage.toLowerCase().includes(pattern.toLowerCase()))
+        );
       }
     });
   }
@@ -175,8 +171,8 @@ export class RetryHandler extends EventEmitter {
         '500', // Internal server error
         '502', // Bad gateway
         '503', // Service unavailable
-        '504'  // Gateway timeout
-      ]
+        '504', // Gateway timeout
+      ],
     };
   }
   /**
@@ -202,8 +198,8 @@ export class RetryHandler extends EventEmitter {
         '500',
         '502',
         '503',
-        '504'
-      ]
+        '504',
+      ],
     };
   }
 
@@ -230,8 +226,8 @@ export class RetryHandler extends EventEmitter {
         '500',
         '502',
         '503',
-        '504'
-      ]
+        '504',
+      ],
     };
   }
 
@@ -239,7 +235,7 @@ export class RetryHandler extends EventEmitter {
    * Utility method for delays
    */
   private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 
@@ -251,12 +247,12 @@ export interface DeadLetterQueue {
    * Send an item to the dead letter queue
    */
   send(item: unknown, error: Error, context?: string): Promise<void>;
-  
+
   /**
    * Get items from the dead letter queue for manual processing
    */
   receive(maxItems?: number): Promise<DeadLetterItem[]>;
-  
+
   /**
    * Delete an item from the dead letter queue
    */
@@ -285,7 +281,7 @@ export class InMemoryDeadLetterQueue implements DeadLetterQueue {
 
   public async send(item: unknown, error: Error, context?: string): Promise<void> {
     const id = `dlq-${++this.itemCounter}-${Date.now()}`;
-    
+
     const dlqItem: DeadLetterItem = {
       id,
       item,
@@ -293,13 +289,13 @@ export class InMemoryDeadLetterQueue implements DeadLetterQueue {
         code: (error as any).code || error.name || 'UNKNOWN_ERROR',
         message: error.message,
         timestamp: new Date(),
-        stackTrace: error.stack
+        stackTrace: error.stack,
       },
       context,
       timestamp: new Date(),
-      retryCount: 0
+      retryCount: 0,
     };
-    
+
     this.items.set(id, dlqItem);
   }
 

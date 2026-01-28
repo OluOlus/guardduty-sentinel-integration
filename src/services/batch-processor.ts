@@ -4,12 +4,12 @@
  */
 
 import { EventEmitter } from 'events';
-import { 
-  ProcessingBatch, 
-  S3ObjectInfo, 
-  WorkerConfig, 
+import {
+  ProcessingBatch,
+  S3ObjectInfo,
+  WorkerConfig,
   ProcessingError,
-  ProcessingMetrics 
+  ProcessingMetrics,
 } from '../types/configuration';
 import { GuardDutyFinding } from '../types/guardduty';
 
@@ -21,12 +21,9 @@ export interface BatchProcessorEvents {
 }
 
 export declare interface BatchProcessor {
-  on<U extends keyof BatchProcessorEvents>(
-    event: U, 
-    listener: BatchProcessorEvents[U]
-  ): this;
+  on<U extends keyof BatchProcessorEvents>(event: U, listener: BatchProcessorEvents[U]): this;
   emit<U extends keyof BatchProcessorEvents>(
-    event: U, 
+    event: U,
     ...args: Parameters<BatchProcessorEvents[U]>
   ): boolean;
 }
@@ -62,7 +59,7 @@ export class BatchProcessor extends EventEmitter {
       avgProcessingTimeMs: 0,
       queueSize: 0,
       throughput: 0,
-      timestamp: new Date()
+      timestamp: new Date(),
     };
   }
 
@@ -72,7 +69,7 @@ export class BatchProcessor extends EventEmitter {
   public addS3Objects(objects: S3ObjectInfo[]): void {
     this.s3Queue.push(...objects);
     this.updateMetrics();
-    
+
     if (this.autoProcess && !this.isProcessing) {
       this.processQueue();
     }
@@ -84,7 +81,7 @@ export class BatchProcessor extends EventEmitter {
   public addFindings(findings: GuardDutyFinding[]): void {
     this.findingsQueue.push(...findings);
     this.updateMetrics();
-    
+
     if (this.autoProcess && !this.isProcessing) {
       this.processQueue();
     }
@@ -96,17 +93,17 @@ export class BatchProcessor extends EventEmitter {
   private createBatch(): ProcessingBatch | null {
     const batchSize = this.config.batchSize;
     const batchId = `batch-${++this.batchCounter}-${Date.now()}`;
-    
+
     // Prioritize findings queue first, then S3 objects
     const findings = this.findingsQueue.splice(0, batchSize);
     const s3Objects: S3ObjectInfo[] = [];
-    
+
     // If we don't have enough findings, fill with S3 objects
     if (findings.length < batchSize && this.s3Queue.length > 0) {
       const remainingCapacity = batchSize - findings.length;
       s3Objects.push(...this.s3Queue.splice(0, remainingCapacity));
     }
-    
+
     // Don't create empty batches
     if (findings.length === 0 && s3Objects.length === 0) {
       return null;
@@ -121,12 +118,12 @@ export class BatchProcessor extends EventEmitter {
       retryCount: 0,
       status: 'pending',
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
     };
 
     this.activeBatches.set(batchId, batch);
     this.emit('batch-created', batch);
-    
+
     return batch;
   }
   /**
@@ -148,17 +145,17 @@ export class BatchProcessor extends EventEmitter {
         }
 
         // Process batch asynchronously but collect promises for manual processing
-        const batchPromise = this.processBatch(batch).catch(error => {
+        const batchPromise = this.processBatch(batch).catch((error) => {
           this.handleBatchError(batch, error);
         });
-        
+
         batchPromises.push(batchPromise);
 
         // Apply batch optimization logic - small delay between batch creation
         // to prevent overwhelming downstream systems
         await this.sleep(10);
       }
-      
+
       // If this is manual processing (not auto-process), wait for all batches to complete
       if (!this.autoProcess) {
         await Promise.all(batchPromises);
@@ -173,40 +170,39 @@ export class BatchProcessor extends EventEmitter {
    */
   private async processBatch(batch: ProcessingBatch): Promise<void> {
     const startTime = Date.now();
-    
+
     try {
       batch.status = 'processing';
       batch.updatedAt = new Date();
-      
+
       // For testing purposes, add a small delay to keep batches visible
       await this.sleep(20);
-      
+
       // Batch optimization: process findings and S3 objects concurrently
       const processingPromises: Promise<void>[] = [];
-      
+
       if (batch.findings.length > 0) {
         processingPromises.push(this.processFindings(batch));
       }
-      
+
       if (batch.s3Objects.length > 0) {
         processingPromises.push(this.processS3Objects(batch));
       }
-      
+
       await Promise.all(processingPromises);
-      
+
       batch.status = 'completed';
       batch.updatedAt = new Date();
-      
+
       // Move to completed batches and clean up
       this.activeBatches.delete(batch.batchId);
       this.completedBatches.set(batch.batchId, batch);
-      
+
       // Update metrics
       const processingTime = Date.now() - startTime;
       this.updateProcessingMetrics(batch, processingTime);
-      
+
       this.emit('batch-completed', batch);
-      
     } catch (error) {
       this.handleBatchError(batch, error as Error);
     }
@@ -258,10 +254,10 @@ export class BatchProcessor extends EventEmitter {
       details: {
         batchId: batch.batchId,
         findingsCount: batch.findings.length,
-        s3ObjectsCount: batch.s3Objects.length
+        s3ObjectsCount: batch.s3Objects.length,
       },
       timestamp: new Date(),
-      stackTrace: error.stack
+      stackTrace: error.stack,
     };
 
     batch.status = 'failed';
@@ -280,24 +276,26 @@ export class BatchProcessor extends EventEmitter {
    */
   private updateProcessingMetrics(batch: ProcessingBatch, processingTimeMs: number): void {
     const totalItems = batch.findings.length + batch.s3Objects.length;
-    
+
     this.metrics.totalProcessed += batch.processedCount;
     this.metrics.totalErrors += batch.failedCount;
-    
+
     // Update average processing time (weighted average)
     const totalProcessedBefore = this.metrics.totalProcessed - batch.processedCount;
     if (totalProcessedBefore > 0) {
-      this.metrics.avgProcessingTimeMs = 
-        (this.metrics.avgProcessingTimeMs * totalProcessedBefore + processingTimeMs) / 
+      this.metrics.avgProcessingTimeMs =
+        (this.metrics.avgProcessingTimeMs * totalProcessedBefore + processingTimeMs) /
         this.metrics.totalProcessed;
     } else {
       this.metrics.avgProcessingTimeMs = processingTimeMs;
     }
-    
+
     // Calculate success rate
-    this.metrics.successRate = this.metrics.totalErrors > 0 ? 
-      this.metrics.totalProcessed / (this.metrics.totalProcessed + this.metrics.totalErrors) : 1.0;
-    
+    this.metrics.successRate =
+      this.metrics.totalErrors > 0
+        ? this.metrics.totalProcessed / (this.metrics.totalProcessed + this.metrics.totalErrors)
+        : 1.0;
+
     this.updateMetrics();
   }
   /**
@@ -306,21 +304,21 @@ export class BatchProcessor extends EventEmitter {
   private updateMetrics(): void {
     this.metrics.queueSize = this.s3Queue.length + this.findingsQueue.length;
     this.metrics.timestamp = new Date();
-    
+
     // Calculate throughput (items per second over last minute)
     // This is a simplified calculation - in production, you'd want a sliding window
     const now = Date.now();
     const oneMinuteAgo = now - 60000;
-    
+
     let recentlyProcessed = 0;
     for (const batch of this.completedBatches.values()) {
       if (batch.updatedAt.getTime() > oneMinuteAgo) {
         recentlyProcessed += batch.processedCount;
       }
     }
-    
+
     this.metrics.throughput = recentlyProcessed / 60; // per second
-    
+
     this.emit('metrics-updated', { ...this.metrics });
   }
 
@@ -353,7 +351,7 @@ export class BatchProcessor extends EventEmitter {
     return {
       s3Objects: this.s3Queue.length,
       findings: this.findingsQueue.length,
-      activeBatches: this.activeBatches.size
+      activeBatches: this.activeBatches.size,
     };
   }
 
@@ -387,6 +385,6 @@ export class BatchProcessor extends EventEmitter {
    * Utility method for delays
    */
   private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

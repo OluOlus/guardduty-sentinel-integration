@@ -15,12 +15,9 @@ export interface DeduplicationEvents {
 }
 
 export declare interface DeduplicationService {
-  on<U extends keyof DeduplicationEvents>(
-    event: U, 
-    listener: DeduplicationEvents[U]
-  ): this;
+  on<U extends keyof DeduplicationEvents>(event: U, listener: DeduplicationEvents[U]): this;
   emit<U extends keyof DeduplicationEvents>(
-    event: U, 
+    event: U,
     ...args: Parameters<DeduplicationEvents[U]>
   ): boolean;
 }
@@ -59,10 +56,10 @@ export class DeduplicationService extends EventEmitter {
       enabled: config.enabled ?? true,
       strategy: config.strategy ?? 'findingId',
       timeWindowMinutes: config.timeWindowMinutes ?? 60,
-      cacheSize: config.cacheSize ?? 10000
+      cacheSize: config.cacheSize ?? 10000,
     };
     this.metrics = this.initializeMetrics();
-    
+
     // Start cache cleanup timer if using time window strategy
     if (this.config.strategy === 'timeWindow' && this.config.timeWindowMinutes) {
       this.startCacheCleanup();
@@ -79,7 +76,7 @@ export class DeduplicationService extends EventEmitter {
       deduplicationRate: 0,
       cacheSize: 0,
       cacheHitRate: 0,
-      timestamp: new Date()
+      timestamp: new Date(),
     };
   }
   /**
@@ -88,7 +85,7 @@ export class DeduplicationService extends EventEmitter {
   public isDuplicate(finding: GuardDutyFinding): boolean {
     // Always update metrics regardless of enabled state
     this.metrics.totalProcessed++;
-    
+
     if (!this.config.enabled) {
       this.updateMetrics();
       return false;
@@ -96,10 +93,10 @@ export class DeduplicationService extends EventEmitter {
 
     const key = this.generateDeduplicationKey(finding);
     const existing = this.cache.get(key);
-    
+
     if (existing) {
       this.cacheHits++;
-      
+
       // Check if duplicate based on strategy
       if (this.isDuplicateByStrategy(finding, existing)) {
         this.metrics.duplicatesDetected++;
@@ -110,11 +107,11 @@ export class DeduplicationService extends EventEmitter {
     } else {
       this.cacheMisses++;
     }
-    
+
     // Add to cache (this will handle eviction if needed)
     this.addToCache(key, finding);
     this.updateMetrics();
-    
+
     return false;
   }
 
@@ -125,14 +122,14 @@ export class DeduplicationService extends EventEmitter {
     switch (this.config.strategy) {
       case 'findingId':
         return `finding:${finding.id}`;
-        
+
       case 'contentHash':
         return `hash:${this.generateContentHash(finding)}`;
-        
+
       case 'timeWindow':
         // For time window, use finding ID but check time separately
         return `window:${finding.id}`;
-        
+
       default:
         throw new Error(`Unknown deduplication strategy: ${this.config.strategy}`);
     }
@@ -154,9 +151,9 @@ export class DeduplicationService extends EventEmitter {
       s3BucketName: finding.resource.s3BucketDetails?.name,
       // Include key service details
       serviceName: finding.service.serviceName,
-      remoteIp: finding.service.action?.networkConnectionAction?.remoteIpDetails?.ipAddressV4
+      remoteIp: finding.service.action?.networkConnectionAction?.remoteIpDetails?.ipAddressV4,
     };
-    
+
     const contentString = JSON.stringify(contentForHash, Object.keys(contentForHash).sort());
     return createHash('sha256').update(contentString).digest('hex');
   }
@@ -169,24 +166,24 @@ export class DeduplicationService extends EventEmitter {
       case 'findingId':
         // Simple ID-based deduplication
         return existing.findingId === finding.id;
-        
+
       case 'contentHash':
         // Content-based deduplication
         const currentHash = this.generateContentHash(finding);
         return existing.hash === currentHash;
-        
+
       case 'timeWindow':
         // Time window-based deduplication
         if (!this.config.timeWindowMinutes) {
           return false;
         }
-        
+
         const now = new Date();
         const windowMs = this.config.timeWindowMinutes * 60 * 1000;
         const timeDiff = now.getTime() - existing.timestamp.getTime();
-        
+
         return existing.findingId === finding.id && timeDiff < windowMs;
-        
+
       default:
         return false;
     }
@@ -201,19 +198,19 @@ export class DeduplicationService extends EventEmitter {
       existing.timestamp = new Date();
       return;
     }
-    
+
     // Check cache size limit before adding new entry
     if (this.config.cacheSize && this.cache.size >= this.config.cacheSize) {
       this.evictOldestEntries();
     }
-    
+
     const entry: CacheEntry = {
       key,
       timestamp: new Date(),
       findingId: finding.id,
-      hash: this.config.strategy === 'contentHash' ? this.generateContentHash(finding) : undefined
+      hash: this.config.strategy === 'contentHash' ? this.generateContentHash(finding) : undefined,
     };
-    
+
     this.cache.set(key, entry);
   }
 
@@ -224,16 +221,17 @@ export class DeduplicationService extends EventEmitter {
     if (!this.config.cacheSize) {
       return;
     }
-    
+
     // Remove oldest 10% of entries
     const entriesToRemove = Math.max(1, Math.floor(this.config.cacheSize * 0.1));
-    const sortedEntries = Array.from(this.cache.entries())
-      .sort(([, a], [, b]) => a.timestamp.getTime() - b.timestamp.getTime());
-    
+    const sortedEntries = Array.from(this.cache.entries()).sort(
+      ([, a], [, b]) => a.timestamp.getTime() - b.timestamp.getTime()
+    );
+
     for (let i = 0; i < entriesToRemove && i < sortedEntries.length; i++) {
       this.cache.delete(sortedEntries[i][0]);
     }
-    
+
     this.emit('cache-evicted', entriesToRemove);
   }
 
@@ -244,14 +242,14 @@ export class DeduplicationService extends EventEmitter {
     if (!this.config.timeWindowMinutes) {
       return;
     }
-    
+
     // Clean up every 5 minutes
     const cleanupInterval = 5 * 60 * 1000;
-    
+
     this.cleanupTimer = setInterval(() => {
       this.cleanupExpiredEntries();
     }, cleanupInterval);
-    
+
     // Ensure timer doesn't keep process alive in tests
     this.cleanupTimer.unref();
   }
@@ -263,11 +261,11 @@ export class DeduplicationService extends EventEmitter {
     if (this.config.strategy !== 'timeWindow' || !this.config.timeWindowMinutes) {
       return;
     }
-    
+
     const now = new Date();
     const windowMs = this.config.timeWindowMinutes * 60 * 1000;
     let removedCount = 0;
-    
+
     for (const [key, entry] of this.cache.entries()) {
       const age = now.getTime() - entry.timestamp.getTime();
       if (age > windowMs) {
@@ -275,7 +273,7 @@ export class DeduplicationService extends EventEmitter {
         removedCount++;
       }
     }
-    
+
     if (removedCount > 0) {
       this.emit('cache-evicted', removedCount);
     }
@@ -286,15 +284,16 @@ export class DeduplicationService extends EventEmitter {
    */
   private updateMetrics(): void {
     this.metrics.cacheSize = this.cache.size;
-    this.metrics.deduplicationRate = this.metrics.totalProcessed > 0 ? 
-      this.metrics.duplicatesDetected / this.metrics.totalProcessed : 0;
-    
+    this.metrics.deduplicationRate =
+      this.metrics.totalProcessed > 0
+        ? this.metrics.duplicatesDetected / this.metrics.totalProcessed
+        : 0;
+
     const totalCacheAccess = this.cacheHits + this.cacheMisses;
-    this.metrics.cacheHitRate = totalCacheAccess > 0 ? 
-      this.cacheHits / totalCacheAccess : 0;
-    
+    this.metrics.cacheHitRate = totalCacheAccess > 0 ? this.cacheHits / totalCacheAccess : 0;
+
     this.metrics.timestamp = new Date();
-    
+
     this.emit('metrics-updated', { ...this.metrics });
   }
   /**
@@ -319,7 +318,7 @@ export class DeduplicationService extends EventEmitter {
       maxSize: this.config.cacheSize || 0,
       hitRate: this.metrics.cacheHitRate,
       totalHits: this.cacheHits,
-      totalMisses: this.cacheMisses
+      totalMisses: this.cacheMisses,
     };
   }
 
@@ -355,14 +354,14 @@ export class DeduplicationService extends EventEmitter {
   } {
     const filtered: GuardDutyFinding[] = [];
     const duplicates: GuardDutyFinding[] = [];
-    
+
     if (!this.config.enabled) {
       // Update metrics for processed findings
       this.metrics.totalProcessed += findings.length;
       this.updateMetrics();
       return { filtered: findings, duplicates: [] };
     }
-    
+
     for (const finding of findings) {
       if (this.isDuplicate(finding)) {
         duplicates.push(finding);
@@ -370,7 +369,7 @@ export class DeduplicationService extends EventEmitter {
         filtered.push(finding);
       }
     }
-    
+
     return { filtered, duplicates };
   }
 
@@ -384,15 +383,15 @@ export class DeduplicationService extends EventEmitter {
       this.updateMetrics();
       return findings;
     }
-    
+
     const filtered: GuardDutyFinding[] = [];
-    
+
     for (const finding of findings) {
       if (!this.isDuplicate(finding)) {
         filtered.push(finding);
       }
     }
-    
+
     return filtered;
   }
 
@@ -405,15 +404,15 @@ export class DeduplicationService extends EventEmitter {
     if (!this.config.enabled) {
       return [];
     }
-    
+
     const duplicates: GuardDutyFinding[] = [];
-    
+
     for (const finding of findings) {
       if (this.isDuplicate(finding)) {
         duplicates.push(finding);
       }
     }
-    
+
     return duplicates;
   }
 
@@ -425,7 +424,7 @@ export class DeduplicationService extends EventEmitter {
       enabled: true,
       strategy: 'findingId',
       timeWindowMinutes: 60,
-      cacheSize: 10000
+      cacheSize: 10000,
     };
   }
 
@@ -436,7 +435,7 @@ export class DeduplicationService extends EventEmitter {
     return {
       enabled: true,
       strategy: 'contentHash',
-      cacheSize
+      cacheSize,
     };
   }
 
@@ -444,14 +443,14 @@ export class DeduplicationService extends EventEmitter {
    * Create a time-window based deduplication configuration
    */
   public static createTimeWindowConfig(
-    timeWindowMinutes = 60, 
+    timeWindowMinutes = 60,
     cacheSize = 10000
   ): DeduplicationConfig {
     return {
       enabled: true,
       strategy: 'timeWindow',
       timeWindowMinutes,
-      cacheSize
+      cacheSize,
     };
   }
 }

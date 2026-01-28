@@ -1,6 +1,6 @@
 /**
  * Integrated monitoring system that combines metrics, logging, and health checks
- * 
+ *
  * This class provides a unified interface for all monitoring and observability
  * functionality in the GuardDuty to Sentinel integration system.
  */
@@ -19,11 +19,10 @@ export interface MonitoringSystemEvents {
 }
 
 export declare interface MonitoringSystem {
-  on<U extends keyof MonitoringSystemEvents>(
-    event: U, listener: MonitoringSystemEvents[U]
-  ): this;
+  on<U extends keyof MonitoringSystemEvents>(event: U, listener: MonitoringSystemEvents[U]): this;
   emit<U extends keyof MonitoringSystemEvents>(
-    event: U, ...args: Parameters<MonitoringSystemEvents[U]>
+    event: U,
+    ...args: Parameters<MonitoringSystemEvents[U]>
   ): boolean;
 }
 
@@ -37,15 +36,15 @@ export class MonitoringSystem extends EventEmitter {
   constructor(config: MonitoringConfig) {
     super();
     this.config = config;
-    
+
     // Initialize logger factory
     LoggerFactory.initialize(config);
-    
+
     // Create main components
     this.metricsCollector = new MetricsCollector(config);
     this.logger = LoggerFactory.getLogger('monitoring-system');
     this.healthCheckSystem = new HealthCheckSystem(config, this.logger);
-    
+
     // Set up event handlers
     this.setupEventHandlers();
   }
@@ -59,7 +58,7 @@ export class MonitoringSystem extends EventEmitter {
     }
 
     const operation = this.logger.operationStart('initialize-monitoring-system');
-    
+
     try {
       // Initialize metrics collector
       await this.metricsCollector.initialize();
@@ -74,9 +73,8 @@ export class MonitoringSystem extends EventEmitter {
 
       this.isInitialized = true;
       this.emit('system-started');
-      
+
       operation.success('Monitoring system initialized successfully');
-      
     } catch (error) {
       operation.failure(error as Error, 'Failed to initialize monitoring system');
       throw error;
@@ -92,7 +90,7 @@ export class MonitoringSystem extends EventEmitter {
     }
 
     const operation = this.logger.operationStart('shutdown-monitoring-system');
-    
+
     try {
       // Stop health check system
       await this.healthCheckSystem.stop();
@@ -104,9 +102,8 @@ export class MonitoringSystem extends EventEmitter {
 
       this.isInitialized = false;
       this.emit('system-stopped');
-      
+
       operation.success('Monitoring system shutdown completed');
-      
     } catch (error) {
       operation.failure(error as Error, 'Failed to shutdown monitoring system');
       throw error;
@@ -140,16 +137,16 @@ export class MonitoringSystem extends EventEmitter {
   public recordProcessingMetrics(metrics: ProcessingMetrics): void {
     // Record metrics
     this.metricsCollector.recordProcessingMetrics(metrics);
-    
+
     // Check thresholds and emit alerts
     this.checkMetricThresholds(metrics);
-    
+
     // Log metrics summary
     this.logger.info('Processing metrics recorded', {
       totalProcessed: metrics.totalProcessed,
       successRate: metrics.successRate,
       throughput: metrics.throughput,
-      queueSize: metrics.queueSize
+      queueSize: metrics.queueSize,
     });
   }
 
@@ -171,30 +168,41 @@ export class MonitoringSystem extends EventEmitter {
   ): Promise<T> {
     const startTime = Date.now();
     const operationLogger = this.logger.operationStart(operationName, context);
-    
+
     try {
       const result = await operation();
       const duration = Date.now() - startTime;
-      
+
       // Record success metrics
-      this.metricsCollector.recordTimer(`operation.${operationName}.duration`, duration, 
-        { ...(context as Record<string, string>), status: 'success' });
-      this.metricsCollector.recordCounter(`operation.${operationName}.success`, 1, context as Record<string, string>);
-      
+      this.metricsCollector.recordTimer(`operation.${operationName}.duration`, duration, {
+        ...(context as Record<string, string>),
+        status: 'success',
+      });
+      this.metricsCollector.recordCounter(
+        `operation.${operationName}.success`,
+        1,
+        context as Record<string, string>
+      );
+
       operationLogger.success(`Operation ${operationName} completed successfully`);
-      
+
       return result;
-      
     } catch (error) {
       const duration = Date.now() - startTime;
-      
+
       // Record error metrics
-      this.metricsCollector.recordTimer(`operation.${operationName}.duration`, duration, 
-        { ...(context as Record<string, string>), status: 'error' });
-      this.metricsCollector.recordCounter(`operation.${operationName}.error`, 1, context as Record<string, string>);
-      
+      this.metricsCollector.recordTimer(`operation.${operationName}.duration`, duration, {
+        ...(context as Record<string, string>),
+        status: 'error',
+      });
+      this.metricsCollector.recordCounter(
+        `operation.${operationName}.error`,
+        1,
+        context as Record<string, string>
+      );
+
       operationLogger.failure(error as Error, `Operation ${operationName} failed`);
-      
+
       throw error;
     }
   }
@@ -208,7 +216,7 @@ export class MonitoringSystem extends EventEmitter {
       if (status === 'degraded' || status === 'unhealthy') {
         this.emit('health-degraded', status);
         this.logger.warn('System health degraded', { status });
-        
+
         // Record health status metric
         const statusValue = status === 'degraded' ? 0.5 : 0; // unhealthy = 0
         this.metricsCollector.recordGauge('system.health.status', statusValue, { status });
@@ -230,6 +238,7 @@ export class MonitoringSystem extends EventEmitter {
    */
   private registerBasicHealthCheckers(): void {
     // Metrics collector health check
+<<<<<<< HEAD
     const metricsChecker = new BasicHealthChecker(
       'metrics-collector',
       async () => {
@@ -240,40 +249,44 @@ export class MonitoringSystem extends EventEmitter {
         return this.metricsCollector.getActiveBackends().length > 0;
       }
     );
+=======
+    const metricsChecker = new BasicHealthChecker('metrics-collector', async () => {
+      return this.metricsCollector.getActiveBackends().length > 0;
+    });
+>>>>>>> 0d504b9 (test)
     this.healthCheckSystem.registerChecker(metricsChecker);
 
     // Memory usage health check
-    const memoryChecker = new BasicHealthChecker(
-      'memory-usage',
-      async () => {
-        const memUsage = process.memoryUsage();
-        const heapUsedMB = memUsage.heapUsed / 1024 / 1024;
-        
-        // Record memory metrics
-        this.metricsCollector.recordGauge('system.memory.heap_used', heapUsedMB, undefined, 'MB');
-        this.metricsCollector.recordGauge('system.memory.heap_total', memUsage.heapTotal / 1024 / 1024, undefined, 'MB');
-        
-        // Consider unhealthy if heap usage exceeds 1GB
-        return heapUsedMB < 1024;
-      }
-    );
+    const memoryChecker = new BasicHealthChecker('memory-usage', async () => {
+      const memUsage = process.memoryUsage();
+      const heapUsedMB = memUsage.heapUsed / 1024 / 1024;
+
+      // Record memory metrics
+      this.metricsCollector.recordGauge('system.memory.heap_used', heapUsedMB, undefined, 'MB');
+      this.metricsCollector.recordGauge(
+        'system.memory.heap_total',
+        memUsage.heapTotal / 1024 / 1024,
+        undefined,
+        'MB'
+      );
+
+      // Consider unhealthy if heap usage exceeds 1GB
+      return heapUsedMB < 1024;
+    });
     this.healthCheckSystem.registerChecker(memoryChecker);
 
     // Event loop lag health check
-    const eventLoopChecker = new BasicHealthChecker(
-      'event-loop',
-      async () => {
-        const start = process.hrtime.bigint();
-        await new Promise(resolve => setImmediate(resolve));
-        const lag = Number(process.hrtime.bigint() - start) / 1000000; // Convert to milliseconds
-        
-        // Record event loop lag metric
-        this.metricsCollector.recordGauge('system.event_loop.lag', lag, undefined, 'ms');
-        
-        // Consider degraded if lag exceeds 100ms, unhealthy if exceeds 500ms
-        return lag < 100;
-      }
-    );
+    const eventLoopChecker = new BasicHealthChecker('event-loop', async () => {
+      const start = process.hrtime.bigint();
+      await new Promise((resolve) => setImmediate(resolve));
+      const lag = Number(process.hrtime.bigint() - start) / 1000000; // Convert to milliseconds
+
+      // Record event loop lag metric
+      this.metricsCollector.recordGauge('system.event_loop.lag', lag, undefined, 'ms');
+
+      // Consider degraded if lag exceeds 100ms, unhealthy if exceeds 500ms
+      return lag < 100;
+    });
     this.healthCheckSystem.registerChecker(eventLoopChecker);
   }
 
@@ -283,31 +296,33 @@ export class MonitoringSystem extends EventEmitter {
   private checkMetricThresholds(metrics: ProcessingMetrics): void {
     // Check error rate threshold
     const errorRate = 1 - metrics.successRate;
-    if (errorRate > 0.1) { // 10% error rate threshold
+    if (errorRate > 0.1) {
+      // 10% error rate threshold
       this.emit('metrics-threshold-exceeded', 'error_rate', errorRate, 0.1);
-      this.logger.warn('Error rate threshold exceeded', { 
-        errorRate, 
+      this.logger.warn('Error rate threshold exceeded', {
+        errorRate,
         threshold: 0.1,
         totalErrors: metrics.totalErrors,
-        totalProcessed: metrics.totalProcessed
+        totalProcessed: metrics.totalProcessed,
       });
     }
 
     // Check queue size threshold
     if (metrics.queueSize > 1000) {
       this.emit('metrics-threshold-exceeded', 'queue_size', metrics.queueSize, 1000);
-      this.logger.warn('Queue size threshold exceeded', { 
-        queueSize: metrics.queueSize, 
-        threshold: 1000 
+      this.logger.warn('Queue size threshold exceeded', {
+        queueSize: metrics.queueSize,
+        threshold: 1000,
       });
     }
 
     // Check processing time threshold
-    if (metrics.avgProcessingTimeMs > 5000) { // 5 seconds
+    if (metrics.avgProcessingTimeMs > 5000) {
+      // 5 seconds
       this.emit('metrics-threshold-exceeded', 'processing_time', metrics.avgProcessingTimeMs, 5000);
-      this.logger.warn('Processing time threshold exceeded', { 
-        avgProcessingTime: metrics.avgProcessingTimeMs, 
-        threshold: 5000 
+      this.logger.warn('Processing time threshold exceeded', {
+        avgProcessingTime: metrics.avgProcessingTimeMs,
+        threshold: 5000,
       });
     }
   }

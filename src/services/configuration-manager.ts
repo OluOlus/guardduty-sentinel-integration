@@ -1,6 +1,6 @@
 /**
  * Configuration management system for the GuardDuty to Sentinel integration
- * 
+ *
  * Provides:
  * - Environment variable loading with type conversion
  * - Configuration file support (JSON/YAML) with schema validation
@@ -12,7 +12,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 import Ajv, { JSONSchemaType } from 'ajv';
-import { WorkerConfig, AwsConfig, AzureConfig, DataCollectionRuleConfig, DeduplicationConfig, MonitoringConfig } from '../types/configuration';
+import {
+  WorkerConfig,
+  AwsConfig,
+  AzureConfig,
+  DataCollectionRuleConfig,
+  DeduplicationConfig,
+  MonitoringConfig,
+} from '../types/configuration';
 
 export interface ConfigurationSource {
   /** Configuration source type */
@@ -65,7 +72,7 @@ export class ConfigurationManager {
   public async loadConfiguration(configFilePath?: string): Promise<ConfigurationLoadResult> {
     const sources: ConfigurationSource[] = [];
     const warnings: string[] = [];
-    
+
     // Start with default configuration
     const defaultConfig = this.getDefaultConfiguration();
     sources.push({
@@ -87,7 +94,9 @@ export class ConfigurationManager {
         });
         mergedConfig = this.mergeConfigurations(mergedConfig, fileConfig);
       } catch (error) {
-        warnings.push(`Failed to load configuration file ${configFilePath}: ${error instanceof Error ? error.message : String(error)}`);
+        warnings.push(
+          `Failed to load configuration file ${configFilePath}: ${error instanceof Error ? error.message : String(error)}`
+        );
       }
     }
 
@@ -105,9 +114,12 @@ export class ConfigurationManager {
     // Validate the final configuration
     const validationResult = this.validateConfiguration(mergedConfig);
     if (validationResult.length > 0) {
-      const errorMessages = validationResult.map(err => 
-        `${err.field}: ${err.message}${err.expected ? ` (expected: ${err.expected})` : ''}`
-      ).join(', ');
+      const errorMessages = validationResult
+        .map(
+          (err) =>
+            `${err.field}: ${err.message}${err.expected ? ` (expected: ${err.expected})` : ''}`
+        )
+        .join(', ');
       throw new Error(`Configuration validation failed: ${errorMessages}`);
     }
 
@@ -130,17 +142,21 @@ export class ConfigurationManager {
     const fileExtension = path.extname(filePath).toLowerCase();
 
     let configData: unknown;
-    
+
     try {
       if (fileExtension === '.json') {
         configData = JSON.parse(fileContent);
       } else if (fileExtension === '.yaml' || fileExtension === '.yml') {
         configData = yaml.load(fileContent);
       } else {
-        throw new Error(`Unsupported configuration file format: ${fileExtension}. Supported formats: .json, .yaml, .yml`);
+        throw new Error(
+          `Unsupported configuration file format: ${fileExtension}. Supported formats: .json, .yaml, .yml`
+        );
       }
     } catch (error) {
-      throw new Error(`Failed to parse configuration file: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to parse configuration file: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
 
     if (typeof configData !== 'object' || configData === null) {
@@ -167,7 +183,10 @@ export class ConfigurationManager {
       config.retryBackoffMs = this.parseInteger('RETRY_BACKOFF_MS', process.env.RETRY_BACKOFF_MS);
     }
     if (process.env.ENABLE_NORMALIZATION) {
-      config.enableNormalization = this.parseBoolean('ENABLE_NORMALIZATION', process.env.ENABLE_NORMALIZATION);
+      config.enableNormalization = this.parseBoolean(
+        'ENABLE_NORMALIZATION',
+        process.env.ENABLE_NORMALIZATION
+      );
     }
     if (process.env.DEAD_LETTER_QUEUE) {
       config.deadLetterQueue = process.env.DEAD_LETTER_QUEUE;
@@ -243,21 +262,32 @@ export class ConfigurationManager {
     if (this.hasAnyDeduplicationEnvVars()) {
       config.deduplication = {} as DeduplicationConfig;
       if (process.env.DEDUPLICATION_ENABLED) {
-        config.deduplication.enabled = this.parseBoolean('DEDUPLICATION_ENABLED', process.env.DEDUPLICATION_ENABLED);
+        config.deduplication.enabled = this.parseBoolean(
+          'DEDUPLICATION_ENABLED',
+          process.env.DEDUPLICATION_ENABLED
+        );
       }
       if (process.env.DEDUPLICATION_STRATEGY) {
         const strategy = process.env.DEDUPLICATION_STRATEGY;
         if (['findingId', 'contentHash', 'timeWindow'].includes(strategy)) {
           config.deduplication.strategy = strategy as 'findingId' | 'contentHash' | 'timeWindow';
         } else {
-          throw new Error(`Invalid deduplication strategy: ${strategy}. Valid values: findingId, contentHash, timeWindow`);
+          throw new Error(
+            `Invalid deduplication strategy: ${strategy}. Valid values: findingId, contentHash, timeWindow`
+          );
         }
       }
       if (process.env.DEDUPLICATION_TIME_WINDOW_MINUTES) {
-        config.deduplication.timeWindowMinutes = this.parseInteger('DEDUPLICATION_TIME_WINDOW_MINUTES', process.env.DEDUPLICATION_TIME_WINDOW_MINUTES);
+        config.deduplication.timeWindowMinutes = this.parseInteger(
+          'DEDUPLICATION_TIME_WINDOW_MINUTES',
+          process.env.DEDUPLICATION_TIME_WINDOW_MINUTES
+        );
       }
       if (process.env.DEDUPLICATION_CACHE_SIZE) {
-        config.deduplication.cacheSize = this.parseInteger('DEDUPLICATION_CACHE_SIZE', process.env.DEDUPLICATION_CACHE_SIZE);
+        config.deduplication.cacheSize = this.parseInteger(
+          'DEDUPLICATION_CACHE_SIZE',
+          process.env.DEDUPLICATION_CACHE_SIZE
+        );
       }
     }
 
@@ -265,13 +295,22 @@ export class ConfigurationManager {
     if (this.hasAnyMonitoringEnvVars()) {
       config.monitoring = {} as MonitoringConfig;
       if (process.env.MONITORING_ENABLE_METRICS) {
-        config.monitoring.enableMetrics = this.parseBoolean('MONITORING_ENABLE_METRICS', process.env.MONITORING_ENABLE_METRICS);
+        config.monitoring.enableMetrics = this.parseBoolean(
+          'MONITORING_ENABLE_METRICS',
+          process.env.MONITORING_ENABLE_METRICS
+        );
       }
       if (process.env.MONITORING_ENABLE_DETAILED_LOGGING) {
-        config.monitoring.enableDetailedLogging = this.parseBoolean('MONITORING_ENABLE_DETAILED_LOGGING', process.env.MONITORING_ENABLE_DETAILED_LOGGING);
+        config.monitoring.enableDetailedLogging = this.parseBoolean(
+          'MONITORING_ENABLE_DETAILED_LOGGING',
+          process.env.MONITORING_ENABLE_DETAILED_LOGGING
+        );
       }
       if (process.env.MONITORING_HEALTH_CHECK_PORT) {
-        config.monitoring.healthCheckPort = this.parseInteger('MONITORING_HEALTH_CHECK_PORT', process.env.MONITORING_HEALTH_CHECK_PORT);
+        config.monitoring.healthCheckPort = this.parseInteger(
+          'MONITORING_HEALTH_CHECK_PORT',
+          process.env.MONITORING_HEALTH_CHECK_PORT
+        );
       }
     }
 
@@ -303,14 +342,21 @@ export class ConfigurationManager {
   /**
    * Merge two configuration objects with proper precedence
    */
-  private mergeConfigurations(base: Partial<WorkerConfig>, override: Partial<WorkerConfig>): Partial<WorkerConfig> {
+  private mergeConfigurations(
+    base: Partial<WorkerConfig>,
+    override: Partial<WorkerConfig>
+  ): Partial<WorkerConfig> {
     const merged = { ...base };
 
     // Merge top-level properties
-    Object.keys(override).forEach(key => {
+    Object.keys(override).forEach((key) => {
       const typedKey = key as keyof WorkerConfig;
       if (override[typedKey] !== undefined) {
-        if (typeof override[typedKey] === 'object' && override[typedKey] !== null && !Array.isArray(override[typedKey])) {
+        if (
+          typeof override[typedKey] === 'object' &&
+          override[typedKey] !== null &&
+          !Array.isArray(override[typedKey])
+        ) {
           // Deep merge for object properties
           const baseValue = merged[typedKey];
           const overrideValue = override[typedKey];
@@ -443,7 +489,10 @@ export class ConfigurationManager {
       });
     }
 
-    if (config.retryBackoffMs !== undefined && (config.retryBackoffMs < 100 || config.retryBackoffMs > 60000)) {
+    if (
+      config.retryBackoffMs !== undefined &&
+      (config.retryBackoffMs < 100 || config.retryBackoffMs > 60000)
+    ) {
       errors.push({
         field: 'retryBackoffMs',
         message: 'Retry backoff must be between 100ms and 60000ms',
@@ -521,7 +570,14 @@ export class ConfigurationManager {
             subscriptionId: { type: 'string' },
             resourceGroupName: { type: 'string' },
           },
-          required: ['tenantId', 'clientId', 'clientSecret', 'workspaceId', 'subscriptionId', 'resourceGroupName'],
+          required: [
+            'tenantId',
+            'clientId',
+            'clientSecret',
+            'workspaceId',
+            'subscriptionId',
+            'resourceGroupName',
+          ],
           additionalProperties: false,
         },
         deduplication: {
@@ -545,7 +601,10 @@ export class ConfigurationManager {
             metricsBackend: {
               type: 'object',
               properties: {
-                type: { type: 'string', enum: ['console', 'prometheus', 'cloudwatch', 'azure-monitor'] },
+                type: {
+                  type: 'string',
+                  enum: ['console', 'prometheus', 'cloudwatch', 'azure-monitor'],
+                },
                 config: { type: 'object', nullable: true, additionalProperties: true },
               },
               required: ['type'],
@@ -558,7 +617,16 @@ export class ConfigurationManager {
           nullable: true,
         },
       },
-      required: ['batchSize', 'maxRetries', 'retryBackoffMs', 'enableNormalization', 'azureEndpoint', 'dcr', 'aws', 'azure'],
+      required: [
+        'batchSize',
+        'maxRetries',
+        'retryBackoffMs',
+        'enableNormalization',
+        'azureEndpoint',
+        'dcr',
+        'aws',
+        'azure',
+      ],
       additionalProperties: false,
     };
   }
@@ -580,7 +648,9 @@ export class ConfigurationManager {
     if (['false', '0', 'no', 'off'].includes(lowerValue)) {
       return false;
     }
-    throw new Error(`Environment variable ${envVarName} must be a valid boolean (true/false, 1/0, yes/no, on/off), got: ${value}`);
+    throw new Error(
+      `Environment variable ${envVarName} must be a valid boolean (true/false, 1/0, yes/no, on/off), got: ${value}`
+    );
   }
 
   private isValidHttpsUrl(url: string): boolean {
@@ -594,23 +664,42 @@ export class ConfigurationManager {
 
   // Helper methods to check if environment variables exist for specific sections
   private hasAnyAwsEnvVars(): boolean {
-    return !!(process.env.AWS_REGION || process.env.AWS_S3_BUCKET_NAME || process.env.AWS_S3_BUCKET_PREFIX || 
-              process.env.AWS_KMS_KEY_ARN || process.env.AWS_ACCESS_KEY_ID || process.env.AWS_SECRET_ACCESS_KEY || 
-              process.env.AWS_SESSION_TOKEN);
+    return !!(
+      process.env.AWS_REGION ||
+      process.env.AWS_S3_BUCKET_NAME ||
+      process.env.AWS_S3_BUCKET_PREFIX ||
+      process.env.AWS_KMS_KEY_ARN ||
+      process.env.AWS_ACCESS_KEY_ID ||
+      process.env.AWS_SECRET_ACCESS_KEY ||
+      process.env.AWS_SESSION_TOKEN
+    );
   }
 
   private hasAnyAzureEnvVars(): boolean {
-    return !!(process.env.AZURE_TENANT_ID || process.env.AZURE_CLIENT_ID || process.env.AZURE_CLIENT_SECRET || 
-              process.env.AZURE_WORKSPACE_ID || process.env.AZURE_SUBSCRIPTION_ID || process.env.AZURE_RESOURCE_GROUP_NAME);
+    return !!(
+      process.env.AZURE_TENANT_ID ||
+      process.env.AZURE_CLIENT_ID ||
+      process.env.AZURE_CLIENT_SECRET ||
+      process.env.AZURE_WORKSPACE_ID ||
+      process.env.AZURE_SUBSCRIPTION_ID ||
+      process.env.AZURE_RESOURCE_GROUP_NAME
+    );
   }
 
   private hasAnyDeduplicationEnvVars(): boolean {
-    return !!(process.env.DEDUPLICATION_ENABLED || process.env.DEDUPLICATION_STRATEGY || 
-              process.env.DEDUPLICATION_TIME_WINDOW_MINUTES || process.env.DEDUPLICATION_CACHE_SIZE);
+    return !!(
+      process.env.DEDUPLICATION_ENABLED ||
+      process.env.DEDUPLICATION_STRATEGY ||
+      process.env.DEDUPLICATION_TIME_WINDOW_MINUTES ||
+      process.env.DEDUPLICATION_CACHE_SIZE
+    );
   }
 
   private hasAnyMonitoringEnvVars(): boolean {
-    return !!(process.env.MONITORING_ENABLE_METRICS || process.env.MONITORING_ENABLE_DETAILED_LOGGING || 
-              process.env.MONITORING_HEALTH_CHECK_PORT);
+    return !!(
+      process.env.MONITORING_ENABLE_METRICS ||
+      process.env.MONITORING_ENABLE_DETAILED_LOGGING ||
+      process.env.MONITORING_HEALTH_CHECK_PORT
+    );
   }
 }
