@@ -409,7 +409,10 @@ export class BasicHealthChecker implements HealthChecker {
       const result = await Promise.race([
         this.checkFunction(),
         new Promise<boolean>((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error('Health check timeout')), this.timeout);
+          timeoutId = setTimeout(
+            () => reject(new Error('Health check timeout')),
+            this.timeout
+          );
         }),
       ]);
 
