@@ -403,17 +403,27 @@ export class BasicHealthChecker implements HealthChecker {
 
   public async check(): Promise<ComponentHealth> {
     const startTime = Date.now();
+<<<<<<< HEAD
     let timeoutId: NodeJS.Timeout | undefined;
+=======
+
+>>>>>>> 777a7e1 (merge)
     try {
       // Run check with timeout
       const result = await Promise.race([
         this.checkFunction(),
+<<<<<<< HEAD
         new Promise<boolean>((_, reject) => {
           timeoutId = setTimeout(
             () => reject(new Error('Health check timeout')),
             this.timeout
           );
         }),
+=======
+        new Promise<boolean>((_, reject) =>
+          setTimeout(() => reject(new Error('Health check timeout')), this.timeout)
+        ),
+>>>>>>> 777a7e1 (merge)
       ]);
 
       const responseTime = Date.now() - startTime;
@@ -435,10 +445,6 @@ export class BasicHealthChecker implements HealthChecker {
         responseTime,
         lastCheck: new Date(),
       };
-    } finally {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
     }
   }
 }
