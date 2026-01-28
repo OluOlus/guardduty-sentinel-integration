@@ -1,0 +1,153 @@
+// GuardDuty Connector Troubleshooting Queries
+// Common issues and diagnostic queries for GuardDuty ingestion problems
+
+// Issue 1: Connector shows "Connected" but no data
+print "=== Troubleshooting: Connected but No Data ==="
+| extend 
+    Issue = "Connector status is 'Connected' but no GuardDuty records in table",
+    CommonCauses = dynamic([
+        "KMS permissions missing for GuardDuty service principal",
+        "S3 bucket notifications not configured correctly", 
+        "SQS queue permissions insufficient",
+        "GuardDuty export destination not configured",
+        "Wrong table name in connector configuration"
+    ]),
+    DiagnosticSteps = dynamic([
+        "1. Verify GuardDuty export destination exists and is active",
+        "2. Check S3 bucket has objects in AWSLogs/{account}/GuardDuty/ path",
+        "3. Validate KMS key policy allows GuardDuty service principal",
+        "4. Confirm SQS queue receives messages from S3",
+        "5. Check connector logs in Azure for specific errors"
+    ])
+| project Issue, CommonCauses, DiagnosticSteps;
+
+// Issue 2: KMS Permission Problems (Most Common)
+print "=== Troubleshooting: KMS Permissions ==="
+| extend
+    Issue = "KMS decryption failures preventing GuardDuty ingestion",
+    RequiredKMSPolicy = '
+{
+    "Sid": "AllowGuardDutyServicePrincipal",
+    "Effect": "Allow", 
+    "Principal": {
+        "Service": "guardduty.amazonaws.com"
+    },
+    "Action": [
+        "kms:Decrypt",
+        "kms:GenerateDataKey"
+    ],
+    "Resource": "*",
+    "Condition": {
+        "StringEquals": {
+            "aws:SourceAccount": "YOUR_ACCOUNT_ID"
+        }
+    }
+}',
+    ValidationQuery = 'Check if S3 objects exist but table is empty - indicates KMS issue'
+| project Issue, RequiredKMSPolicy, ValidationQuery;
+
+// Diagnostic Query: Check for partial ingestion patterns
+let tableName = toscalar(AWSGuardDuty_Config() | where Setting == "TableName" | project Value);
+print "=== Diagnostic: Ingestion Patterns ==="
+| union (
+    table(tableName)
+    | where TimeGenerated >= ago(7d)
+    | summarize RecordCount = count() by bin(TimeGenerated, 1h)
+    | order by TimeGenerated desc
+    | take 24
+    | summarize 
+        HoursWithData = count(),
+        AvgRecordsPerHour = avg(RecordCount),
+        MaxRecordsPerHour = max(RecordCount),
+        MinRecordsPerHour = min(RecordCount)
+    | extend 
+        IngestionPattern = case(
+            HoursWithData == 0, "❌ No data in last 24 hours",
+            HoursWithData < 12, "⚠️ Intermittent ingestion - possible KMS/permission issues",
+            MinRecordsPerHour == 0, "⚠️ Gaps in ingestion - check connector health",
+            "✅ Consistent ingestion pattern"
+        )
+    | project IngestionPattern, HoursWithData, AvgRecordsPerHour, MaxRecordsPerHour
+);
+
+// Diagnostic Query: Data quality issues
+print "=== Diagnostic: Data Quality Issues ==="
+| union (
+    AWSGuardDuty_Main(1d)
+    | extend 
+        HasValidJson = isnotempty(gd),
+        HasFindingId = isnotempty(FindingId),
+        HasSeverity = isnotnull(Severity),
+        HasAccountId = isnotempty(AwsAccountId)
+    | summarize 
+        TotalRecords = count(),
+        ValidJsonRecords = countif(HasValidJson),
+        RecordsWithFindingId = countif(HasFindingId),
+        RecordsWithSeverity = countif(HasSeverity),
+        RecordsWithAccountId = countif(HasAccountId)
+    | extend 
+        JsonParseRate = ValidJsonRecords * 100 / TotalRecords,
+        DataQualityScore = (RecordsWithFindingId + RecordsWithSeverity + RecordsWithAccountId) * 100 / (TotalRecords * 3),
+        QualityAssessment = case(
+            JsonParseRate < 90, "❌ JSON parsing issues - check raw data format",
+            DataQualityScore < 80, "⚠️ Missing required fields - possible schema changes",
+            "✅ Good data quality"
+        )
+    | project QualityAssessment, TotalRecords, JsonParseRate, DataQualityScore
+);
+
+// Diagnostic Query: Account and region coverage
+print "=== Diagnostic: Account and Region Coverage ==="
+| union (
+    AWSGuardDuty_Main(7d)
+    | summarize 
+        RecordCount = count(),
+        FirstSeen = min(EventTime),
+        LastSeen = max(EventTime)
+    by AwsAccountId, AwsRegion
+    | order by RecordCount desc
+    | take 20
+    | summarize 
+        UniqueAccounts = dcount(AwsAccountId),
+        UniqueRegions = dcount(AwsRegion),
+        TotalAccountRegionPairs = count(),
+        TopAccountRegions = make_list(strcat(AwsAccountId, "/", AwsRegion, " (", RecordCount, ")"))
+    | extend Coverage = strcat("Monitoring ", UniqueAccounts, " accounts across ", UniqueRegions, " regions")
+    | project Coverage, UniqueAccounts, UniqueRegions, TopAccountRegions
+);
+
+// Common Resolution Steps
+print "=== Common Resolution Steps ==="
+| extend ResolutionSteps = dynamic([
+    "1. KMS Issues: Add GuardDuty service principal to KMS key policy",
+    "2. No Data: Verify GuardDuty export destination is configured and active", 
+    "3. Partial Data: Check S3 bucket notifications and SQS queue configuration",
+    "4. Permission Issues: Ensure connector IAM role has s3:GetObject and kms:Decrypt",
+    "5. Table Issues: Verify correct table name in connector configuration",
+    "6. Regional Issues: Confirm GuardDuty is enabled in expected regions",
+    "7. Timing Issues: GuardDuty exports can take 6+ hours for initial findings"
+])
+| mv-expand ResolutionSteps
+| project ResolutionSteps;
+
+// Quick Health Check Query
+print "=== Quick Health Check ==="
+| extend 
+    CheckTime = now(),
+    Instructions = "Run this query every few hours to monitor connector health",
+    ExpectedResults = "Should see consistent data flow with recent timestamps"
+| union (
+    AWSGuardDuty_Main(1h)
+    | summarize 
+        RecentRecords = count(),
+        LatestRecord = max(TimeGenerated),
+        UniqueFindings = dcount(FindingId)
+    | extend 
+        HealthStatus = case(
+            RecentRecords == 0, "❌ No recent data - check connector",
+            LatestRecord < ago(2h), "⚠️ Data delay - possible ingestion lag",
+            "✅ Healthy ingestion"
+        )
+    | project HealthStatus, RecentRecords, LatestRecord, UniqueFindings
+)
+| project CheckTime, Instructions, ExpectedResults, HealthStatus, RecentRecords, LatestRecord, UniqueFindings;

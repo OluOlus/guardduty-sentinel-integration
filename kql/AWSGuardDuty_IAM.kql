@@ -1,0 +1,86 @@
+// AWSGuardDuty_IAM
+// IAM-focused parser for GuardDuty findings
+// Extracts API call details and identity context
+let AWSGuardDuty_IAM = (lookback: timespan = timespan(null)) {
+    AWSGuardDuty_Main(lookback)
+    | where ActionType == "AWS_API_CALL" or FindingType has_any("IAM", "Stealth", "Policy", "Credential", "UnauthorizedAPI")
+    //
+    // Extract API call details
+    | extend
+        ApiName = tostring(gd.service.action.awsApiCallAction.api),
+        ServiceName_API = tostring(gd.service.action.awsApiCallAction.serviceName),
+        CallerType = tostring(gd.service.action.awsApiCallAction.callerType),
+        ErrorCode = tostring(gd.service.action.awsApiCallAction.errorCode),
+        UserAgent = tostring(gd.service.action.awsApiCallAction.userAgent),
+        RemoteIp_API = tostring(gd.service.action.awsApiCallAction.remoteIpDetails.ipAddressV4),
+        RemoteCountry_API = tostring(gd.service.action.awsApiCallAction.remoteIpDetails.country.countryName),
+        RemoteCity_API = tostring(gd.service.action.awsApiCallAction.remoteIpDetails.city.cityName),
+        RemoteOrganization_API = tostring(gd.service.action.awsApiCallAction.remoteIpDetails.organization.org)
+    //
+    // Extract identity context
+    | extend
+        UserType = tostring(gd.service.action.awsApiCallAction.remoteAccountDetails.accountId),
+        UserName = tostring(gd.service.action.awsApiCallAction.remoteAccountDetails.affiliated),
+        AccessKeyId = tostring(gd.service.action.awsApiCallAction.remoteAccountDetails.accessKeyId),
+        PrincipalId = tostring(gd.service.action.awsApiCallAction.remoteAccountDetails.principalId),
+        SessionName = tostring(gd.service.action.awsApiCallAction.remoteAccountDetails.sessionName)
+    //
+    // Extract resource context for IAM findings
+    | extend
+        ResourceArn = tostring(gd.resource.accessKeyDetails.accessKeyId),
+        ResourceUserName = tostring(gd.resource.accessKeyDetails.userName),
+        ResourceUserType = tostring(gd.resource.accessKeyDetails.userType)
+    //
+    // Determine action result
+    | extend ActionResult = case(
+        isnotempty(ErrorCode), "Failure",
+        "Success"
+    )
+    //
+    // Categorize finding types
+    | extend FindingCategory = case(
+        FindingType has "Stealth", "Stealth",
+        FindingType has "Policy", "Policy Violation", 
+        FindingType has "Credential", "Credential Compromise",
+        FindingType has "UnauthorizedAPI", "Unauthorized Access",
+        "IAM Activity"
+    )
+    //
+    // Project IAM-specific fields
+    | project 
+        TimeGenerated,
+        EventTime,
+        FindingId,
+        FindingType,
+        FindingCategory,
+        Severity,
+        SeverityLevel,
+        Title,
+        Description,
+        AwsAccountId,
+        AwsRegion,
+        // API call details
+        ApiName,
+        ServiceName_API,
+        CallerType,
+        ActionResult,
+        ErrorCode,
+        UserAgent,
+        // Identity context
+        UserType,
+        UserName,
+        AccessKeyId,
+        PrincipalId,
+        SessionName,
+        // Resource context
+        ResourceArn,
+        ResourceUserName,
+        ResourceUserType,
+        // Network context
+        RemoteIp_API,
+        RemoteCountry_API,
+        RemoteCity_API,
+        RemoteOrganization_API,
+        RawJson
+};
+AWSGuardDuty_IAM

@@ -1,0 +1,22 @@
+// AWSGuardDuty_Config
+// Configuration function for GuardDuty parsers
+// This function centralizes table names and settings for all GuardDuty parsers
+let AWSGuardDuty_Config = () {
+    datatable(
+        Setting: string,
+        Value: string
+    )[
+        // Table where GuardDuty data lands via AWS S3 connector
+        "TableName", "AWSGuardDuty",
+        
+        // Raw JSON column name (if available)
+        "RawColumn", "EventData",
+        
+        // Default lookback period for queries
+        "DefaultLookback", "7d",
+        
+        // Parser version for tracking
+        "ParserVersion", "1.0.0"
+    ]
+};
+AWSGuardDuty_Config
