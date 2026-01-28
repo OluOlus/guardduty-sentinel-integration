@@ -1,6 +1,6 @@
 /**
  * KQL Parser Service
- * 
+ *
  * Simulates the KQL parser function logic for testing field extraction.
  * This TypeScript implementation mirrors the KQL function behavior for validation.
  */
@@ -42,7 +42,7 @@ export class KqlParser {
   constructor(config: KqlParserConfig = {}) {
     this.config = {
       strictValidation: config.strictValidation ?? false,
-      maxFieldLength: config.maxFieldLength ?? 32768
+      maxFieldLength: config.maxFieldLength ?? 32768,
     };
   }
 
@@ -54,13 +54,13 @@ export class KqlParser {
     const result: ParsedFields = {
       extracted: {},
       failed: [],
-      errors: []
+      errors: [],
     };
 
     try {
       // Parse JSON (equivalent to parse_json() in KQL)
       const parsedJson = JSON.parse(rawJson);
-      
+
       if (!parsedJson || typeof parsedJson !== 'object') {
         throw new Error('Parsed JSON is not an object');
       }
@@ -70,53 +70,62 @@ export class KqlParser {
       this.extractDateField(parsedJson, 'updatedAt', 'UpdatedAt', result);
       this.extractStringField(parsedJson, 'title', 'Title', result);
       this.extractStringField(parsedJson, 'description', 'Description', result);
-      
+
       // Extract nested service fields
       this.extractNestedStringField(parsedJson, 'service.serviceName', 'Service', result);
-      
+
       // Extract resource fields
       this.extractNestedStringField(parsedJson, 'resource.resourceType', 'ResourceType', result);
-      this.extractNestedStringField(parsedJson, 'resource.instanceDetails.instanceId', 'InstanceId', result);
-      
+      this.extractNestedStringField(
+        parsedJson,
+        'resource.instanceDetails.instanceId',
+        'InstanceId',
+        result
+      );
+
       // Extract network action fields (optional)
       this.extractNestedStringField(
-        parsedJson, 
-        'service.action.networkConnectionAction.remoteIpDetails.country.countryName', 
-        'RemoteIpCountry', 
+        parsedJson,
+        'service.action.networkConnectionAction.remoteIpDetails.country.countryName',
+        'RemoteIpCountry',
         result
       );
       this.extractNestedStringField(
-        parsedJson, 
-        'service.action.networkConnectionAction.remoteIpDetails.ipAddressV4', 
-        'RemoteIpAddress', 
+        parsedJson,
+        'service.action.networkConnectionAction.remoteIpDetails.ipAddressV4',
+        'RemoteIpAddress',
         result
       );
 
       // Extract DNS action fields (optional)
-      this.extractNestedStringField(parsedJson, 'service.action.dnsRequestAction.domain', 'DnsRequestDomain', result);
+      this.extractNestedStringField(
+        parsedJson,
+        'service.action.dnsRequestAction.domain',
+        'DnsRequestDomain',
+        result
+      );
       this.extractNestedStringField(parsedJson, 'service.action.actionType', 'ActionType', result);
 
       // Extract threat intelligence fields (optional)
       this.extractNestedStringField(
-        parsedJson, 
-        'service.evidence.threatIntelligenceDetails.0.threatNames.0', 
-        'ThreatNames', 
+        parsedJson,
+        'service.evidence.threatIntelligenceDetails.0.threatNames.0',
+        'ThreatNames',
         result
       );
 
       // Extract event timing fields
       this.extractNestedDateField(parsedJson, 'service.eventFirstSeen', 'EventFirstSeen', result);
       this.extractNestedDateField(parsedJson, 'service.eventLastSeen', 'EventLastSeen', result);
-      
+
       // Extract count and archived fields
       this.extractNestedNumberField(parsedJson, 'service.count', 'Count', result);
       this.extractNestedBooleanField(parsedJson, 'service.archived', 'Archived', result);
-
     } catch (error) {
       result.errors.push({
         field: 'root',
         message: error instanceof Error ? error.message : 'Unknown parsing error',
-        originalValue: rawJson
+        originalValue: rawJson,
       });
     }
 
@@ -129,20 +138,27 @@ export class KqlParser {
   async validateStandardFields(finding: GuardDutyFinding): Promise<boolean> {
     const rawJson = JSON.stringify(finding);
     const parsed = await this.parseFields(rawJson);
-    
+
     // Check that core required fields are extractable
     const requiredFields = ['Service', 'ResourceType'];
     const extractedFields = Object.keys(parsed.extracted);
-    
-    return requiredFields.every(field => extractedFields.includes(field));
+
+    return requiredFields.every((field) => extractedFields.includes(field));
   }
 
-  private extractStringField(obj: any, path: string, targetField: string, result: ParsedFields): void {
+  private extractStringField(
+    obj: any,
+    path: string,
+    targetField: string,
+    result: ParsedFields
+  ): void {
     try {
       const value = this.getNestedValue(obj, path);
       if (value !== undefined && value !== null) {
         const stringValue = String(value);
-        result.extracted[targetField as keyof NormalizedFinding] = this.truncateString(stringValue) as any;
+        result.extracted[targetField as keyof NormalizedFinding] = this.truncateString(
+          stringValue
+        ) as any;
       } else {
         result.failed.push(targetField);
       }
@@ -151,12 +167,17 @@ export class KqlParser {
       result.errors.push({
         field: targetField,
         message: error instanceof Error ? error.message : 'String extraction failed',
-        originalValue: this.getNestedValue(obj, path)
+        originalValue: this.getNestedValue(obj, path),
       });
     }
   }
 
-  private extractDateField(obj: any, path: string, targetField: string, result: ParsedFields): void {
+  private extractDateField(
+    obj: any,
+    path: string,
+    targetField: string,
+    result: ParsedFields
+  ): void {
     try {
       const value = this.getNestedValue(obj, path);
       if (value !== undefined && value !== null) {
@@ -168,7 +189,7 @@ export class KqlParser {
           result.errors.push({
             field: targetField,
             message: 'Invalid date format',
-            originalValue: value
+            originalValue: value,
           });
         }
       } else {
@@ -179,20 +200,35 @@ export class KqlParser {
       result.errors.push({
         field: targetField,
         message: error instanceof Error ? error.message : 'Date extraction failed',
-        originalValue: this.getNestedValue(obj, path)
+        originalValue: this.getNestedValue(obj, path),
       });
     }
   }
 
-  private extractNestedStringField(obj: any, path: string, targetField: string, result: ParsedFields): void {
+  private extractNestedStringField(
+    obj: any,
+    path: string,
+    targetField: string,
+    result: ParsedFields
+  ): void {
     this.extractStringField(obj, path, targetField, result);
   }
 
-  private extractNestedDateField(obj: any, path: string, targetField: string, result: ParsedFields): void {
+  private extractNestedDateField(
+    obj: any,
+    path: string,
+    targetField: string,
+    result: ParsedFields
+  ): void {
     this.extractDateField(obj, path, targetField, result);
   }
 
-  private extractNestedNumberField(obj: any, path: string, targetField: string, result: ParsedFields): void {
+  private extractNestedNumberField(
+    obj: any,
+    path: string,
+    targetField: string,
+    result: ParsedFields
+  ): void {
     try {
       const value = this.getNestedValue(obj, path);
       if (value !== undefined && value !== null) {
@@ -204,7 +240,7 @@ export class KqlParser {
           result.errors.push({
             field: targetField,
             message: 'Invalid number format',
-            originalValue: value
+            originalValue: value,
           });
         }
       } else {
@@ -215,12 +251,17 @@ export class KqlParser {
       result.errors.push({
         field: targetField,
         message: error instanceof Error ? error.message : 'Number extraction failed',
-        originalValue: this.getNestedValue(obj, path)
+        originalValue: this.getNestedValue(obj, path),
       });
     }
   }
 
-  private extractNestedBooleanField(obj: any, path: string, targetField: string, result: ParsedFields): void {
+  private extractNestedBooleanField(
+    obj: any,
+    path: string,
+    targetField: string,
+    result: ParsedFields
+  ): void {
     try {
       const value = this.getNestedValue(obj, path);
       if (value !== undefined && value !== null) {
@@ -233,7 +274,7 @@ export class KqlParser {
       result.errors.push({
         field: targetField,
         message: error instanceof Error ? error.message : 'Boolean extraction failed',
-        originalValue: this.getNestedValue(obj, path)
+        originalValue: this.getNestedValue(obj, path),
       });
     }
   }
@@ -243,13 +284,13 @@ export class KqlParser {
       if (current === null || current === undefined) {
         return undefined;
       }
-      
+
       // Handle array indices (e.g., "0" in path)
       if (/^\d+$/.test(key)) {
         const index = parseInt(key, 10);
         return Array.isArray(current) ? current[index] : undefined;
       }
-      
+
       return current[key];
     }, obj);
   }

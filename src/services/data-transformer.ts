@@ -1,6 +1,6 @@
 /**
  * DataTransformer - Data transformation pipeline for GuardDuty findings
- * 
+ *
  * Provides optional normalization and field extraction/mapping for GuardDuty findings
  * before ingestion into Azure Monitor Logs. Supports both raw and normalized modes.
  */
@@ -68,7 +68,7 @@ export class DataTransformer {
       includeRawJson: config.includeRawJson ?? true,
       maxFieldLength: config.maxFieldLength || 32768,
       timezone: config.timezone || 'UTC',
-      customFieldMappings: config.customFieldMappings || {}
+      customFieldMappings: config.customFieldMappings || {},
     };
   }
 
@@ -84,10 +84,10 @@ export class DataTransformer {
     for (let i = 0; i < findings.length; i++) {
       try {
         const finding = findings[i];
-        const transformed = this.config.enableNormalization 
+        const transformed = this.config.enableNormalization
           ? await this.transformToNormalized(finding)
           : await this.transformToRaw(finding);
-        
+
         transformedData.push(transformed);
         transformedCount++;
       } catch (error) {
@@ -96,9 +96,9 @@ export class DataTransformer {
           findingId: findings[i]?.id,
           error: error instanceof Error ? error.message : 'Unknown transformation error',
           timestamp: new Date(),
-          originalData: JSON.stringify(findings[i]).substring(0, 500)
+          originalData: JSON.stringify(findings[i]).substring(0, 500),
         };
-        
+
         errors.push(transformationError);
         failedCount++;
       }
@@ -109,7 +109,7 @@ export class DataTransformer {
       transformedCount,
       failedCount,
       errors,
-      mode: this.config.enableNormalization ? 'normalized' : 'raw'
+      mode: this.config.enableNormalization ? 'normalized' : 'raw',
     };
   }
 
@@ -118,7 +118,7 @@ export class DataTransformer {
    */
   async transformSingleFinding(finding: GuardDutyFinding): Promise<Record<string, unknown>> {
     try {
-      return this.config.enableNormalization 
+      return this.config.enableNormalization
         ? await this.transformToNormalized(finding)
         : await this.transformToRaw(finding);
     } catch (error) {
@@ -145,7 +145,7 @@ export class DataTransformer {
       Region: this.truncateString(finding.region),
       Severity: this.normalizeSeverity(finding.severity),
       Type: this.truncateString(finding.type),
-      RawJson: JSON.stringify(finding)
+      RawJson: JSON.stringify(finding),
     };
 
     // Apply custom field mappings if any
@@ -179,7 +179,7 @@ export class DataTransformer {
       InstanceId: this.extractInstanceId(finding),
       RemoteIpCountry: this.extractRemoteIpCountry(finding),
       RemoteIpAddress: this.extractRemoteIpAddress(finding),
-      RawJson: this.config.includeRawJson ? JSON.stringify(finding) : ''
+      RawJson: this.config.includeRawJson ? JSON.stringify(finding) : '',
     };
 
     // Convert to Azure-compatible format with string truncation
@@ -196,10 +196,16 @@ export class DataTransformer {
       Description: this.truncateString(normalizedData.Description),
       Service: this.truncateString(normalizedData.Service),
       ResourceType: this.truncateString(normalizedData.ResourceType),
-      ...(normalizedData.InstanceId && { InstanceId: this.truncateString(normalizedData.InstanceId) }),
-      ...(normalizedData.RemoteIpCountry && { RemoteIpCountry: this.truncateString(normalizedData.RemoteIpCountry) }),
-      ...(normalizedData.RemoteIpAddress && { RemoteIpAddress: this.truncateString(normalizedData.RemoteIpAddress) }),
-      ...(this.config.includeRawJson && { RawJson: normalizedData.RawJson })
+      ...(normalizedData.InstanceId && {
+        InstanceId: this.truncateString(normalizedData.InstanceId),
+      }),
+      ...(normalizedData.RemoteIpCountry && {
+        RemoteIpCountry: this.truncateString(normalizedData.RemoteIpCountry),
+      }),
+      ...(normalizedData.RemoteIpAddress && {
+        RemoteIpAddress: this.truncateString(normalizedData.RemoteIpAddress),
+      }),
+      ...(this.config.includeRawJson && { RawJson: normalizedData.RawJson }),
     };
 
     // Apply custom field mappings if any
@@ -270,7 +276,7 @@ export class DataTransformer {
     if (typeof severity !== 'number' || isNaN(severity)) {
       return 0.0;
     }
-    
+
     // Clamp severity between 0.0 and 8.9
     return Math.max(0.0, Math.min(8.9, severity));
   }
@@ -282,11 +288,11 @@ export class DataTransformer {
     if (typeof value !== 'string') {
       return String(value);
     }
-    
+
     if (value.length <= this.config.maxFieldLength) {
       return value;
     }
-    
+
     return value.substring(0, this.config.maxFieldLength - 3) + '...';
   }
 
@@ -322,13 +328,23 @@ export class DataTransformer {
    */
   private validateRequiredFields(finding: GuardDutyFinding): void {
     const requiredFields = [
-      'id', 'accountId', 'region', 'type', 'severity', 
-      'createdAt', 'updatedAt', 'title', 'description'
+      'id',
+      'accountId',
+      'region',
+      'type',
+      'severity',
+      'createdAt',
+      'updatedAt',
+      'title',
+      'description',
     ];
 
     for (const field of requiredFields) {
-      if (!(field in finding) || finding[field as keyof GuardDutyFinding] === null || 
-          finding[field as keyof GuardDutyFinding] === undefined) {
+      if (
+        !(field in finding) ||
+        finding[field as keyof GuardDutyFinding] === null ||
+        finding[field as keyof GuardDutyFinding] === undefined
+      ) {
         throw new Error(`Missing required field: ${field}`);
       }
     }
@@ -350,7 +366,10 @@ export class DataTransformer {
    * Applies custom field mappings to the transformed data
    */
   private applyCustomMappings(data: Record<string, unknown>): Record<string, unknown> {
-    if (!this.config.customFieldMappings || Object.keys(this.config.customFieldMappings).length === 0) {
+    if (
+      !this.config.customFieldMappings ||
+      Object.keys(this.config.customFieldMappings).length === 0
+    ) {
       return data;
     }
 
@@ -383,7 +402,7 @@ export class DataTransformer {
     this.config = {
       ...this.config,
       ...newConfig,
-      customFieldMappings: newConfig.customFieldMappings || this.config.customFieldMappings
+      customFieldMappings: newConfig.customFieldMappings || this.config.customFieldMappings,
     };
   }
 
@@ -399,8 +418,10 @@ export class DataTransformer {
       throw new Error('includeRawJson must be a boolean');
     }
 
-    if (config.maxFieldLength !== undefined && 
-        (typeof config.maxFieldLength !== 'number' || config.maxFieldLength <= 0)) {
+    if (
+      config.maxFieldLength !== undefined &&
+      (typeof config.maxFieldLength !== 'number' || config.maxFieldLength <= 0)
+    ) {
       throw new Error('maxFieldLength must be a positive number');
     }
 
@@ -408,8 +429,10 @@ export class DataTransformer {
       throw new Error('timezone must be a string');
     }
 
-    if (config.customFieldMappings !== undefined && 
-        (typeof config.customFieldMappings !== 'object' || config.customFieldMappings === null)) {
+    if (
+      config.customFieldMappings !== undefined &&
+      (typeof config.customFieldMappings !== 'object' || config.customFieldMappings === null)
+    ) {
       throw new Error('customFieldMappings must be an object');
     }
   }
@@ -422,7 +445,7 @@ export class DataTransformer {
       enableNormalization,
       includeRawJson: true,
       maxFieldLength: 32768,
-      timezone: 'UTC'
+      timezone: 'UTC',
     });
   }
 }

@@ -1,6 +1,6 @@
 /**
  * Structured logging system with contextual error information
- * 
+ *
  * Provides comprehensive logging capabilities for the GuardDuty to Sentinel integration,
  * with structured output, contextual information, and configurable log levels.
  */
@@ -64,11 +64,10 @@ export interface StructuredLoggerEvents {
 }
 
 export declare interface StructuredLogger {
-  on<U extends keyof StructuredLoggerEvents>(
-    event: U, listener: StructuredLoggerEvents[U]
-  ): this;
+  on<U extends keyof StructuredLoggerEvents>(event: U, listener: StructuredLoggerEvents[U]): this;
   emit<U extends keyof StructuredLoggerEvents>(
-    event: U, ...args: Parameters<StructuredLoggerEvents[U]>
+    event: U,
+    ...args: Parameters<StructuredLoggerEvents[U]>
   ): boolean;
 }
 
@@ -82,14 +81,10 @@ export class StructuredLogger extends EventEmitter {
     info: 1,
     warn: 2,
     error: 3,
-    fatal: 4
+    fatal: 4,
   };
 
-  constructor(
-    loggerName: string, 
-    config: MonitoringConfig, 
-    context: LoggerContext = {}
-  ) {
+  constructor(loggerName: string, config: MonitoringConfig, context: LoggerContext = {}) {
     super();
     this.loggerName = loggerName;
     this.config = config;
@@ -106,8 +101,8 @@ export class StructuredLogger extends EventEmitter {
       ...context,
       data: {
         ...this.context.data,
-        ...context.data
-      }
+        ...context.data,
+      },
     };
     return new StructuredLogger(this.loggerName, this.config, mergedContext);
   }
@@ -158,14 +153,14 @@ export class StructuredLogger extends EventEmitter {
       correlationId,
       data: {
         ...this.context.data,
-        ...context
-      }
+        ...context,
+      },
     };
 
     // Create a child logger with operation context and log the start
     const operationLogger = this.child(operationContext);
     operationLogger.info(`Starting operation: ${operation}`, context);
-    
+
     return new OperationLogger(this, operation, correlationId, Date.now());
   }
 
@@ -173,33 +168,44 @@ export class StructuredLogger extends EventEmitter {
    * Log with timing information
    */
   public timed<T>(operation: string, fn: () => T, context?: Record<string, unknown>): T;
-  public timed<T>(operation: string, fn: () => Promise<T>, context?: Record<string, unknown>): Promise<T>;
-  public timed<T>(operation: string, fn: () => T | Promise<T>, context?: Record<string, unknown>): T | Promise<T> {
+  public timed<T>(
+    operation: string,
+    fn: () => Promise<T>,
+    context?: Record<string, unknown>
+  ): Promise<T>;
+  public timed<T>(
+    operation: string,
+    fn: () => T | Promise<T>,
+    context?: Record<string, unknown>
+  ): T | Promise<T> {
     const startTime = Date.now();
     const correlationId = this.generateCorrelationId();
-    
+
     // Create a child logger with timing context
     const timedLogger = this.child({
       operation,
       correlationId,
-      data: context
+      data: context,
     });
-    
+
     timedLogger.debug(`Starting timed operation: ${operation}`, context);
-    
+
     try {
       const result = fn();
-      
+
       if (result instanceof Promise) {
         return result
-          .then(value => {
+          .then((value) => {
             const duration = Date.now() - startTime;
             timedLogger.debug(`Completed timed operation: ${operation}`, { ...context, duration });
             return value;
           })
-          .catch(error => {
+          .catch((error) => {
             const duration = Date.now() - startTime;
-            timedLogger.error(`Failed timed operation: ${operation}`, error, { ...context, duration });
+            timedLogger.error(`Failed timed operation: ${operation}`, error, {
+              ...context,
+              duration,
+            });
             throw error;
           });
       } else {
@@ -209,7 +215,10 @@ export class StructuredLogger extends EventEmitter {
       }
     } catch (error) {
       const duration = Date.now() - startTime;
-      timedLogger.error(`Failed timed operation: ${operation}`, error as Error, { ...context, duration });
+      timedLogger.error(`Failed timed operation: ${operation}`, error as Error, {
+        ...context,
+        duration,
+      });
       throw error;
     }
   }
@@ -218,8 +227,8 @@ export class StructuredLogger extends EventEmitter {
    * Core logging method
    */
   private log(
-    level: LogLevel, 
-    message: string, 
+    level: LogLevel,
+    message: string,
     context?: Record<string, unknown>,
     error?: Error,
     correlationId?: string,
@@ -238,11 +247,11 @@ export class StructuredLogger extends EventEmitter {
       logger: this.loggerName,
       context: {
         ...this.context.data,
-        ...context
+        ...context,
       },
       correlationId: correlationId || this.context.correlationId,
       operation: operation || this.context.operation,
-      duration
+      duration,
     };
 
     if (error) {
@@ -268,7 +277,7 @@ export class StructuredLogger extends EventEmitter {
     const errorInfo: ErrorInfo = {
       name: error.name,
       message: error.message,
-      stack: error.stack
+      stack: error.stack,
     };
 
     // Add error code if available
@@ -302,26 +311,30 @@ export class StructuredLogger extends EventEmitter {
     const timestamp = entry.timestamp.toISOString();
     const level = entry.level.toUpperCase().padEnd(5);
     const logger = entry.logger.padEnd(20);
-    
+
     let output = `${timestamp} [${level}] ${logger} - ${entry.message}`;
-    
+
     // Add correlation ID if present
     if (entry.correlationId) {
       output += ` [${entry.correlationId}]`;
     }
-    
+
     // Add operation if present
     if (entry.operation) {
       output += ` (${entry.operation})`;
     }
-    
+
     // Add duration if present
     if (entry.duration !== undefined) {
       output += ` [${entry.duration}ms]`;
     }
 
     // Add context if present and detailed logging is enabled
-    if (entry.context && Object.keys(entry.context).length > 0 && this.config.enableDetailedLogging) {
+    if (
+      entry.context &&
+      Object.keys(entry.context).length > 0 &&
+      this.config.enableDetailedLogging
+    ) {
       output += `\n  Context: ${JSON.stringify(entry.context, null, 2)}`;
     }
 
@@ -378,9 +391,9 @@ export class OperationLogger {
   private readonly startTime: number;
 
   constructor(
-    logger: StructuredLogger, 
-    operation: string, 
-    correlationId: string, 
+    logger: StructuredLogger,
+    operation: string,
+    correlationId: string,
     startTime: number
   ) {
     this.logger = logger;
@@ -395,13 +408,13 @@ export class OperationLogger {
   public success(message?: string, context?: Record<string, unknown>): void {
     const duration = Date.now() - this.startTime;
     const finalMessage = message || `Operation completed successfully: ${this.operation}`;
-    
+
     // Create a child logger with operation context and log the success
     const operationLogger = this.logger.child({
       operation: this.operation,
-      correlationId: this.correlationId
+      correlationId: this.correlationId,
     });
-    
+
     operationLogger.info(finalMessage, { ...context, duration });
   }
 
@@ -411,13 +424,13 @@ export class OperationLogger {
   public failure(error: Error, message?: string, context?: Record<string, unknown>): void {
     const duration = Date.now() - this.startTime;
     const finalMessage = message || `Operation failed: ${this.operation}`;
-    
+
     // Create a child logger with operation context and log the failure
     const operationLogger = this.logger.child({
       operation: this.operation,
-      correlationId: this.correlationId
+      correlationId: this.correlationId,
     });
-    
+
     operationLogger.error(finalMessage, error, { ...context, duration });
   }
 
@@ -426,13 +439,13 @@ export class OperationLogger {
    */
   public progress(message: string, context?: Record<string, unknown>): void {
     const duration = Date.now() - this.startTime;
-    
+
     // Create a child logger with operation context and log the progress
     const operationLogger = this.logger.child({
       operation: this.operation,
-      correlationId: this.correlationId
+      correlationId: this.correlationId,
     });
-    
+
     operationLogger.debug(`${this.operation}: ${message}`, { ...context, duration });
   }
 
@@ -442,7 +455,7 @@ export class OperationLogger {
   public getContext(): LoggerContext {
     return {
       operation: this.operation,
-      correlationId: this.correlationId
+      correlationId: this.correlationId,
     };
   }
 }
@@ -470,7 +483,7 @@ export class LoggerFactory {
     }
 
     const key = `${name}:${JSON.stringify(context || {})}`;
-    
+
     if (!this.loggers.has(key)) {
       const logger = new StructuredLogger(name, this.config, context);
       this.loggers.set(key, logger);

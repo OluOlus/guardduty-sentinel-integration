@@ -1,6 +1,6 @@
 /**
  * JSONLProcessor - Handles compressed GuardDuty findings in JSONL format
- * 
+ *
  * Processes JSONL (JSON Lines) files with streaming decompression for large files,
  * includes JSON validation and parsing with error recovery.
  */
@@ -59,7 +59,7 @@ export class JSONLProcessor {
       maxLineLength: config.maxLineLength || 1024 * 1024, // 1MB per line
       skipInvalidLines: config.skipInvalidLines ?? true,
       validateSchema: config.validateSchema ?? true,
-      encoding: config.encoding || 'utf8'
+      encoding: config.encoding || 'utf8',
     };
   }
 
@@ -79,7 +79,7 @@ export class JSONLProcessor {
     try {
       // Create decompression stream if needed
       let processingStream: Readable = stream;
-      
+
       if (compressionType === 'gzip') {
         processingStream = stream.pipe(createGunzip());
       } else if (compressionType === 'deflate') {
@@ -106,9 +106,8 @@ export class JSONLProcessor {
         validFindings,
         invalidLines,
         errors,
-        findings
+        findings,
       };
-
     } catch (error) {
       throw new JSONLProcessorError(
         `Failed to process compressed stream: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -136,7 +135,7 @@ export class JSONLProcessor {
     try {
       // Create decompression stream if needed
       let processingStream: Readable = stream;
-      
+
       if (compressionType === 'gzip') {
         processingStream = stream.pipe(createGunzip());
       } else if (compressionType === 'deflate') {
@@ -165,9 +164,8 @@ export class JSONLProcessor {
         totalLines,
         validFindings,
         invalidLines,
-        errors
+        errors,
       };
-
     } catch (error) {
       throw new JSONLProcessorError(
         `Failed to process stream with callback: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -192,7 +190,7 @@ export class JSONLProcessor {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
-      
+
       // Skip empty lines
       if (!line) {
         continue;
@@ -209,9 +207,9 @@ export class JSONLProcessor {
           lineNumber: i + 1,
           line: line.substring(0, 200) + (line.length > 200 ? '...' : ''),
           error: error instanceof Error ? error.message : 'Unknown parsing error',
-          timestamp: new Date()
+          timestamp: new Date(),
         };
-        
+
         errors.push(processingError);
         invalidLines++;
 
@@ -231,7 +229,7 @@ export class JSONLProcessor {
       validFindings,
       invalidLines,
       errors,
-      findings
+      findings,
     };
   }
 
@@ -245,9 +243,19 @@ export class JSONLProcessor {
 
     // Basic required field validation
     const requiredFields = [
-      'schemaVersion', 'accountId', 'region', 'id', 'arn', 'type',
-      'resource', 'service', 'severity', 'createdAt', 'updatedAt',
-      'title', 'description'
+      'schemaVersion',
+      'accountId',
+      'region',
+      'id',
+      'arn',
+      'type',
+      'resource',
+      'service',
+      'severity',
+      'createdAt',
+      'updatedAt',
+      'title',
+      'description',
     ];
 
     for (const field of requiredFields) {
@@ -276,11 +284,11 @@ export class JSONLProcessor {
     // Date validation
     const createdAt = new Date(finding.createdAt);
     const updatedAt = new Date(finding.updatedAt);
-    
+
     if (isNaN(createdAt.getTime())) {
       throw new Error('Invalid createdAt: must be valid ISO date string');
     }
-    
+
     if (isNaN(updatedAt.getTime())) {
       throw new Error('Invalid updatedAt: must be valid ISO date string');
     }
@@ -309,14 +317,14 @@ export class JSONLProcessor {
         try {
           buffer += chunk.toString(processor.config.encoding);
           const lines = buffer.split('\n');
-          
+
           // Keep the last incomplete line in buffer
           buffer = lines.pop() || '';
 
           for (const line of lines) {
             lineNumber++;
             const trimmedLine = line.trim();
-            
+
             if (!trimmedLine) {
               continue;
             }
@@ -331,19 +339,19 @@ export class JSONLProcessor {
                 lineNumber,
                 line: trimmedLine.substring(0, 200) + (trimmedLine.length > 200 ? '...' : ''),
                 error: error instanceof Error ? error.message : 'Unknown parsing error',
-                timestamp: new Date()
+                timestamp: new Date(),
               };
-              
+
               this.push({ type: 'error', data: processingError, lineNumber });
             }
           }
-          
+
           callback();
         } catch (error) {
           callback(error instanceof Error ? error : new Error('Transform error'));
         }
       },
-      
+
       flush(callback) {
         // Process any remaining data in buffer
         if (buffer.trim()) {
@@ -358,14 +366,14 @@ export class JSONLProcessor {
               lineNumber,
               line: buffer.trim().substring(0, 200) + (buffer.trim().length > 200 ? '...' : ''),
               error: error instanceof Error ? error.message : 'Unknown parsing error',
-              timestamp: new Date()
+              timestamp: new Date(),
             };
-            
+
             this.push({ type: 'error', data: processingError, lineNumber });
           }
         }
         callback();
-      }
+      },
     });
   }
 
@@ -405,9 +413,9 @@ export class JSONLProcessor {
     onError: (error: JSONLProcessingError) => Promise<void> | void
   ): Promise<{ totalLines: number }> {
     let totalLines = 0;
-    
+
     const transformStream = this.createTransformStream();
-    
+
     return new Promise((resolve, reject) => {
       let hasError = false;
 
