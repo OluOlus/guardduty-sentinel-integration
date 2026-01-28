@@ -1,0 +1,78 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workspaceName": {
+            "type": "string",
+            "metadata": {
+                "description": "Name of the Log Analytics workspace where GuardDuty data is ingested"
+            }
+        },
+        "guardDutyTableName": {
+            "type": "string",
+            "defaultValue": "AWSGuardDuty",
+            "metadata": {
+                "description": "Name of the table where GuardDuty findings are stored"
+            }
+        },
+        "rawDataColumn": {
+            "type": "string", 
+            "defaultValue": "EventData",
+            "metadata": {
+                "description": "Name of the column containing raw GuardDuty JSON data"
+            }
+        },
+        "defaultLookback": {
+            "type": "string",
+            "defaultValue": "7d",
+            "metadata": {
+                "description": "Default time range for GuardDuty queries"
+            }
+        }
+    },
+    "variables": {
+        "parserVersion": "1.0.0"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.OperationalInsights/workspaces/savedSearches",
+            "apiVersion": "2020-08-01",
+            "name": "[concat(parameters('workspaceName'), '/AWSGuardDuty_Config')]",
+            "properties": {
+                "displayName": "AWSGuardDuty_Config",
+                "category": "GuardDuty",
+                "query": "[concat('// AWSGuardDuty_Config\n// Configuration function for GuardDuty parsers\nlet AWSGuardDuty_Config = () {\n    datatable(\n        Setting: string,\n        Value: string\n    )[\n        \"TableName\", \"', parameters('guardDutyTableName'), '\",\n        \"RawColumn\", \"', parameters('rawDataColumn'), '\",\n        \"DefaultLookback\", \"', parameters('defaultLookback'), '\",\n        \"ParserVersion\", \"', variables('parserVersion'), '\"\n    ]\n};\nAWSGuardDuty_Config')]",
+                "functionAlias": "AWSGuardDuty_Config",
+                "functionParameters": ""
+            }
+        },
+        {
+            "type": "Microsoft.OperationalInsights/workspaces/savedSearches",
+            "apiVersion": "2020-08-01",
+            "name": "[concat(parameters('workspaceName'), '/AWSGuardDuty_Main')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces/savedSearches', parameters('workspaceName'), 'AWSGuardDuty_Config')]"
+            ],
+            "properties": {
+                "displayName": "AWSGuardDuty_Main",
+                "category": "GuardDuty",
+                "query": "// AWSGuardDuty_Main\n// Main parser function for GuardDuty findings\nlet AWSGuardDuty_Main = (lookback: timespan = timespan(null)) {\n    let _lookback = iff(isnull(lookback), \n        totimespan(toscalar(AWSGuardDuty_Config() | where Setting == \"DefaultLookback\" | project Value)), \n        lookback);\n    let _tableName = toscalar(AWSGuardDuty_Config() | where Setting == \"TableName\" | project Value);\n    let _rawColumn = toscalar(AWSGuardDuty_Config() | where Setting == \"RawColumn\" | project Value);\n    //\n    table(_tableName)\n    | where TimeGenerated >= ago(_lookback)\n    | extend RawJson = column_ifexists(_rawColumn, \"\")\n    | where isnotempty(RawJson)\n    | extend gd = parse_json(RawJson)\n    | where isnotempty(gd)\n    //\n    | extend\n        EventTime = todatetime(gd.createdAt),\n        UpdatedTime = todatetime(gd.updatedAt),\n        FindingId = tostring(gd.id),\n        FindingType = tostring(gd.type),\n        Severity = todouble(gd.severity),\n        Title = tostring(gd.title),\n        Description = tostring(gd.description),\n        AwsAccountId = tostring(gd.accountId),\n        AwsRegion = tostring(gd.region),\n        ServiceName = tostring(gd.service.serviceName),\n        ResourceType = tostring(gd.resource.resourceType),\n        ActionType = tostring(gd.service.action.actionType)\n    //\n    | extend SeverityLevel = case(\n        Severity >= 7.0, \"High\",\n        Severity >= 4.0, \"Medium\", \n        Severity >= 1.0, \"Low\",\n        \"Informational\"\n    )\n    //\n    | project \n        TimeGenerated,\n        EventTime,\n        UpdatedTime,\n        FindingId,\n        FindingType,\n        Severity,\n        SeverityLevel,\n        Title,\n        Description,\n        AwsAccountId,\n        AwsRegion,\n        ServiceName,\n        ResourceType,\n        ActionType,\n        RawJson,\n        gd\n};\nAWSGuardDuty_Main",
+                "functionAlias": "AWSGuardDuty_Main",
+                "functionParameters": "lookback:timespan=timespan(null)"
+            }
+        }
+    ],
+    "outputs": {
+        "workspaceName": {
+            "type": "string",
+            "value": "[parameters('workspaceName')]"
+        },
+        "deployedFunctions": {
+            "type": "array",
+            "value": [
+                "AWSGuardDuty_Config",
+                "AWSGuardDuty_Main"
+            ]
+        }
+    }
+}

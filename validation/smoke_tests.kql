@@ -1,0 +1,108 @@
+// GuardDuty Connector Smoke Tests
+// These queries validate that the AWS S3 connector is properly ingesting GuardDuty data
+
+// Test 1: Check if GuardDuty table exists and has recent data
+let tableName = toscalar(AWSGuardDuty_Config() | where Setting == "TableName" | project Value);
+let lookback = totimespan(toscalar(AWSGuardDuty_Config() | where Setting == "DefaultLookback" | project Value));
+//
+print "=== GuardDuty Data Availability Test ==="
+| union (
+    table(tableName)
+    | where TimeGenerated >= ago(lookback)
+    | summarize 
+        RecordCount = count(),
+        LatestRecord = max(TimeGenerated),
+        OldestRecord = min(TimeGenerated),
+        DataSpan = max(TimeGenerated) - min(TimeGenerated)
+    | extend 
+        TestResult = case(
+            RecordCount == 0, "❌ FAIL: No GuardDuty records found",
+            LatestRecord < ago(24h), "⚠️ WARNING: Latest record is older than 24 hours", 
+            "✅ PASS: GuardDuty data is available"
+        )
+    | project TestResult, RecordCount, LatestRecord, OldestRecord, DataSpan
+);
+
+// Test 2: Validate data structure and required fields
+print "=== GuardDuty Data Structure Test ==="
+| union (
+    AWSGuardDuty_Main(1d)
+    | summarize 
+        TotalRecords = count(),
+        RecordsWithFindingId = countif(isnotempty(FindingId)),
+        RecordsWithSeverity = countif(isnotnull(Severity)),
+        RecordsWithAccountId = countif(isnotempty(AwsAccountId)),
+        RecordsWithRawJson = countif(isnotempty(RawJson)),
+        UniqueFindingTypes = dcount(FindingType),
+        UniqueAccounts = dcount(AwsAccountId)
+    | extend 
+        StructureScore = (RecordsWithFindingId + RecordsWithSeverity + RecordsWithAccountId + RecordsWithRawJson) * 100 / (TotalRecords * 4),
+        TestResult = case(
+            TotalRecords == 0, "❌ FAIL: No parseable GuardDuty records",
+            StructureScore < 80, "⚠️ WARNING: Some records missing required fields",
+            "✅ PASS: GuardDuty data structure is valid"
+        )
+    | project TestResult, TotalRecords, StructureScore, UniqueFindingTypes, UniqueAccounts
+);
+
+// Test 3: Check for common GuardDuty finding types
+print "=== GuardDuty Finding Types Test ==="
+| union (
+    AWSGuardDuty_Main(7d)
+    | summarize count() by FindingType
+    | order by count_ desc
+    | take 10
+    | summarize 
+        TopFindingTypes = make_list(strcat(FindingType, " (", count_, ")")),
+        TotalTypes = count()
+    | extend TestResult = case(
+        TotalTypes == 0, "❌ FAIL: No finding types detected",
+        TotalTypes < 3, "⚠️ WARNING: Limited finding type diversity",
+        "✅ PASS: Multiple GuardDuty finding types detected"
+    )
+    | project TestResult, TotalTypes, TopFindingTypes
+);
+
+// Test 4: Network findings validation
+print "=== Network Findings Test ==="
+| union (
+    AWSGuardDuty_Network(7d)
+    | summarize 
+        NetworkFindings = count(),
+        FindingsWithRemoteIP = countif(isnotempty(RemoteIp)),
+        FindingsWithPorts = countif(isnotnull(RemotePort)),
+        UniqueRemoteIPs = dcount(RemoteIp),
+        UniqueCountries = dcount(RemoteCountry)
+    | extend TestResult = case(
+        NetworkFindings == 0, "⚠️ INFO: No network findings in timeframe",
+        FindingsWithRemoteIP * 100 / NetworkFindings < 50, "⚠️ WARNING: Many network findings missing IP details",
+        "✅ PASS: Network findings have good data quality"
+    )
+    | project TestResult, NetworkFindings, FindingsWithRemoteIP, UniqueRemoteIPs, UniqueCountries
+);
+
+// Test 5: IAM findings validation  
+print "=== IAM Findings Test ==="
+| union (
+    AWSGuardDuty_IAM(7d)
+    | summarize 
+        IAMFindings = count(),
+        FindingsWithAPI = countif(isnotempty(ApiName)),
+        FindingsWithUser = countif(isnotempty(UserName)),
+        UniqueAPIs = dcount(ApiName),
+        UniqueUsers = dcount(UserName)
+    | extend TestResult = case(
+        IAMFindings == 0, "⚠️ INFO: No IAM findings in timeframe",
+        FindingsWithAPI * 100 / IAMFindings < 50, "⚠️ WARNING: Many IAM findings missing API details",
+        "✅ PASS: IAM findings have good data quality"
+    )
+    | project TestResult, IAMFindings, FindingsWithAPI, UniqueAPIs, UniqueUsers
+);
+
+// Summary Report
+print "=== Connector Health Summary ==="
+| extend 
+    Timestamp = now(),
+    ConnectorStatus = "Run individual tests above for detailed results",
+    NextSteps = "If tests fail, check troubleshooting.kql for common issues"
+| project Timestamp, ConnectorStatus, NextSteps;

@@ -1,0 +1,73 @@
+// AWSGuardDuty_Network
+// Network-focused parser for GuardDuty findings
+// Extracts network connection details and remote IP information
+let AWSGuardDuty_Network = (lookback: timespan = timespan(null)) {
+    AWSGuardDuty_Main(lookback)
+    | where ActionType == "NETWORK_CONNECTION" or FindingType has_any("DNS", "Network", "Backdoor", "Trojan")
+    //
+    // Extract network connection details
+    | extend
+        ConnectionDirection = tostring(gd.service.action.networkConnectionAction.connectionDirection),
+        Protocol = tostring(gd.service.action.networkConnectionAction.protocol),
+        LocalPort = toint(gd.service.action.networkConnectionAction.localPortDetails.port),
+        LocalPortName = tostring(gd.service.action.networkConnectionAction.localPortDetails.portName),
+        RemoteIp = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.ipAddressV4),
+        RemotePort = toint(gd.service.action.networkConnectionAction.remotePortDetails.port),
+        RemotePortName = tostring(gd.service.action.networkConnectionAction.remotePortDetails.portName),
+        RemoteCountry = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.country.countryName),
+        RemoteCountryCode = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.country.countryCode),
+        RemoteCity = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.city.cityName),
+        RemoteOrganization = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.organization.org),
+        RemoteIsp = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.organization.isp)
+    //
+    // Extract instance context
+    | extend
+        InstanceId = tostring(gd.resource.instanceDetails.instanceId),
+        InstanceType = tostring(gd.resource.instanceDetails.instanceType),
+        VpcId = tostring(gd.resource.instanceDetails.networkInterfaces[0].vpcId),
+        SubnetId = tostring(gd.resource.instanceDetails.networkInterfaces[0].subnetId),
+        PrivateIp = tostring(gd.resource.instanceDetails.networkInterfaces[0].privateIpAddress),
+        PublicIp = tostring(gd.resource.instanceDetails.networkInterfaces[0].publicIp)
+    //
+    // Determine traffic direction for ASIM compatibility
+    | extend TrafficDirection = case(
+        ConnectionDirection == "INBOUND", "Inbound",
+        ConnectionDirection == "OUTBOUND", "Outbound", 
+        "Unknown"
+    )
+    //
+    // Project network-specific fields
+    | project 
+        TimeGenerated,
+        EventTime,
+        FindingId,
+        FindingType,
+        Severity,
+        SeverityLevel,
+        Title,
+        AwsAccountId,
+        AwsRegion,
+        // Network details
+        ConnectionDirection,
+        TrafficDirection,
+        Protocol,
+        LocalPort,
+        LocalPortName,
+        RemoteIp,
+        RemotePort,
+        RemotePortName,
+        RemoteCountry,
+        RemoteCountryCode,
+        RemoteCity,
+        RemoteOrganization,
+        RemoteIsp,
+        // Instance context
+        InstanceId,
+        InstanceType,
+        VpcId,
+        SubnetId,
+        PrivateIp,
+        PublicIp,
+        RawJson
+};
+AWSGuardDuty_Network

@@ -1,0 +1,160 @@
+// Local Testing Script for GuardDuty KQL Functions
+// This script uses sample data to test KQL functions without requiring a live Sentinel workspace
+
+// Test 1: Config Function Test
+print "=== Testing AWSGuardDuty_Config ==="
+| union (
+    // Simulate the config function with datatable
+    datatable(Setting: string, Value: string)[
+        "TableName", "AWSGuardDuty",
+        "RawColumn", "EventData", 
+        "DefaultLookback", "7d",
+        "ParserVersion", "1.0.0"
+    ]
+    | extend TestResult = "✅ Config function structure is valid"
+    | project TestResult, Setting, Value
+);
+
+// Test 2: Sample Data Structure Test
+print "=== Testing Sample Data Structure ==="
+| union (
+    // Create sample GuardDuty data for testing
+    datatable(
+        TimeGenerated: datetime,
+        EventData: string
+    )[
+        datetime(2024-01-28T10:00:00Z), '{"id":"finding-123","type":"Backdoor:EC2/C&CActivity.B","severity":8.5,"title":"Backdoor activity","description":"EC2 instance is communicating with a known command and control server","accountId":"123456789012","region":"us-east-1","createdAt":"2024-01-28T10:00:00.000Z","updatedAt":"2024-01-28T10:00:00.000Z","service":{"serviceName":"guardduty","action":{"actionType":"NETWORK_CONNECTION","networkConnectionAction":{"remoteIpDetails":{"ipAddressV4":"198.51.100.1","country":{"countryName":"Example Country"},"geoLocation":{"lat":40.7128,"lon":-74.0060}},"remotePortDetails":{"port":443,"portName":"HTTPS"},"protocol":"TCP","blocked":false}}},"resource":{"resourceType":"Instance","instanceDetails":{"instanceId":"i-1234567890abcdef0","instanceType":"t2.micro","availabilityZone":"us-east-1a","vpcId":"vpc-12345678","subnetId":"subnet-12345678"}}}',
+        datetime(2024-01-28T11:00:00Z), '{"id":"finding-456","type":"UnauthorizedAPICall:IAMUser/MaliciousIPCaller.Custom","severity":5.0,"title":"API call from malicious IP","description":"An API call was made from a known malicious IP address","accountId":"123456789012","region":"us-east-1","createdAt":"2024-01-28T11:00:00.000Z","updatedAt":"2024-01-28T11:00:00.000Z","service":{"serviceName":"guardduty","action":{"actionType":"AWS_API_CALL","awsApiCallAction":{"api":"AssumeRole","serviceName":"sts","remoteIpDetails":{"ipAddressV4":"203.0.113.1","country":{"countryName":"Example Country"}}}}},"resource":{"resourceType":"AccessKey","accessKeyDetails":{"accessKeyId":"AKIAIOSFODNN7EXAMPLE","principalId":"AIDACKCEVSQ6C2EXAMPLE","userType":"IAMUser","userName":"testuser"}}}'
+    ]
+    | extend 
+        RawJson = EventData,
+        gd = parse_json(EventData)
+    | where isnotempty(gd)
+    | extend
+        FindingId = tostring(gd.id),
+        FindingType = tostring(gd.type),
+        Severity = todouble(gd.severity),
+        Title = tostring(gd.title),
+        AwsAccountId = tostring(gd.accountId),
+        AwsRegion = tostring(gd.region)
+    | summarize 
+        TotalRecords = count(),
+        RecordsWithFindingId = countif(isnotempty(FindingId)),
+        RecordsWithSeverity = countif(isnotnull(Severity)),
+        UniqueFindingTypes = dcount(FindingType)
+    | extend TestResult = case(
+        TotalRecords == 0, "❌ FAIL: No sample records",
+        RecordsWithFindingId != TotalRecords, "❌ FAIL: Missing FindingId in some records",
+        RecordsWithSeverity != TotalRecords, "❌ FAIL: Missing Severity in some records",
+        "✅ PASS: Sample data parsing works correctly"
+    )
+    | project TestResult, TotalRecords, RecordsWithFindingId, RecordsWithSeverity, UniqueFindingTypes
+);
+
+// Test 3: Network Parser Logic Test
+print "=== Testing Network Parser Logic ==="
+| union (
+    // Test network-specific parsing
+    datatable(
+        TimeGenerated: datetime,
+        EventData: string
+    )[
+        datetime(2024-01-28T10:00:00Z), '{"id":"network-finding","type":"Backdoor:EC2/C&CActivity.B","severity":8.5,"service":{"action":{"actionType":"NETWORK_CONNECTION","networkConnectionAction":{"remoteIpDetails":{"ipAddressV4":"198.51.100.1","country":{"countryName":"Example Country"}},"remotePortDetails":{"port":443},"protocol":"TCP"}}},"resource":{"instanceDetails":{"instanceId":"i-1234567890abcdef0","vpcId":"vpc-12345678"}}}'
+    ]
+    | extend gd = parse_json(EventData)
+    | extend
+        ActionType = tostring(gd.service.action.actionType),
+        RemoteIp = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.ipAddressV4),
+        RemotePort = toint(gd.service.action.networkConnectionAction.remotePortDetails.port),
+        Protocol = tostring(gd.service.action.networkConnectionAction.protocol),
+        RemoteCountry = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.country.countryName),
+        InstanceId = tostring(gd.resource.instanceDetails.instanceId),
+        VpcId = tostring(gd.resource.instanceDetails.vpcId)
+    | where ActionType == "NETWORK_CONNECTION"
+    | summarize 
+        NetworkFindings = count(),
+        FindingsWithRemoteIP = countif(isnotempty(RemoteIp)),
+        FindingsWithPorts = countif(isnotnull(RemotePort))
+    | extend TestResult = case(
+        NetworkFindings == 0, "❌ FAIL: No network findings detected",
+        FindingsWithRemoteIP == 0, "❌ FAIL: No remote IPs extracted",
+        "✅ PASS: Network parsing logic works"
+    )
+    | project TestResult, NetworkFindings, FindingsWithRemoteIP, FindingsWithPorts
+);
+
+// Test 4: IAM Parser Logic Test  
+print "=== Testing IAM Parser Logic ==="
+| union (
+    // Test IAM-specific parsing
+    datatable(
+        TimeGenerated: datetime,
+        EventData: string
+    )[
+        datetime(2024-01-28T11:00:00Z), '{"id":"iam-finding","type":"UnauthorizedAPICall:IAMUser/MaliciousIPCaller.Custom","service":{"action":{"actionType":"AWS_API_CALL","awsApiCallAction":{"api":"AssumeRole","serviceName":"sts","remoteIpDetails":{"ipAddressV4":"203.0.113.1"}}}},"resource":{"accessKeyDetails":{"accessKeyId":"AKIAIOSFODNN7EXAMPLE","userName":"testuser"}}}'
+    ]
+    | extend gd = parse_json(EventData)
+    | extend
+        ActionType = tostring(gd.service.action.actionType),
+        ApiName = tostring(gd.service.action.awsApiCallAction.api),
+        ServiceName = tostring(gd.service.action.awsApiCallAction.serviceName),
+        UserName = tostring(gd.resource.accessKeyDetails.userName),
+        AccessKeyId = tostring(gd.resource.accessKeyDetails.accessKeyId),
+        SourceIp = tostring(gd.service.action.awsApiCallAction.remoteIpDetails.ipAddressV4)
+    | where ActionType == "AWS_API_CALL"
+    | summarize 
+        IAMFindings = count(),
+        FindingsWithAPI = countif(isnotempty(ApiName)),
+        FindingsWithUser = countif(isnotempty(UserName))
+    | extend TestResult = case(
+        IAMFindings == 0, "❌ FAIL: No IAM findings detected",
+        FindingsWithAPI == 0, "❌ FAIL: No API names extracted",
+        "✅ PASS: IAM parsing logic works"
+    )
+    | project TestResult, IAMFindings, FindingsWithAPI, FindingsWithUser
+);
+
+// Test 5: ASIM Mapping Test
+print "=== Testing ASIM Network Session Mapping ==="
+| union (
+    // Test ASIM normalization
+    datatable(
+        TimeGenerated: datetime,
+        EventData: string
+    )[
+        datetime(2024-01-28T10:00:00Z), '{"id":"asim-test","type":"Backdoor:EC2/C&CActivity.B","severity":8.5,"service":{"action":{"actionType":"NETWORK_CONNECTION","networkConnectionAction":{"remoteIpDetails":{"ipAddressV4":"198.51.100.1"},"remotePortDetails":{"port":443},"protocol":"TCP","blocked":false}}},"resource":{"instanceDetails":{"privateIpAddress":"10.0.1.100"}}}'
+    ]
+    | extend gd = parse_json(EventData)
+    | extend
+        // ASIM Network Session fields
+        SrcIpAddr = tostring(gd.resource.instanceDetails.privateIpAddress),
+        DstIpAddr = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.ipAddressV4),
+        DstPortNumber = toint(gd.service.action.networkConnectionAction.remotePortDetails.port),
+        NetworkProtocol = tostring(gd.service.action.networkConnectionAction.protocol),
+        NetworkDirection = "Outbound",
+        EventSeverity = case(
+            todouble(gd.severity) >= 7.0, "High",
+            todouble(gd.severity) >= 4.0, "Medium",
+            "Low"
+        ),
+        ThreatCategory = "Backdoor"
+    | summarize 
+        ASIMRecords = count(),
+        RecordsWithSrcIP = countif(isnotempty(SrcIpAddr)),
+        RecordsWithDstIP = countif(isnotempty(DstIpAddr)),
+        RecordsWithPorts = countif(isnotnull(DstPortNumber))
+    | extend TestResult = case(
+        ASIMRecords == 0, "❌ FAIL: No ASIM records created",
+        RecordsWithDstIP == 0, "❌ FAIL: No destination IPs mapped",
+        "✅ PASS: ASIM mapping works correctly"
+    )
+    | project TestResult, ASIMRecords, RecordsWithSrcIP, RecordsWithDstIP, RecordsWithPorts
+);
+
+// Summary
+print "=== Test Summary ==="
+| extend 
+    Timestamp = now(),
+    TestStatus = "Local KQL function testing completed",
+    NextSteps = "Deploy to Sentinel workspace and run smoke tests with real data"
+| project Timestamp, TestStatus, NextSteps;

@@ -1,0 +1,151 @@
+// GuardDuty Test Queries
+// These queries demonstrate how to use the GuardDuty parsing functions
+
+// ===== Basic Usage Examples =====
+
+// 1. Get all GuardDuty findings from the last 24 hours
+AWSGuardDuty_Main(1d)
+| take 10;
+
+// 2. High severity findings only
+AWSGuardDuty_Main(7d)
+| where SeverityLevel == "High"
+| project EventTime, FindingType, Title, AwsAccountId, AwsRegion
+| order by EventTime desc;
+
+// 3. Finding type distribution
+AWSGuardDuty_Main(30d)
+| summarize Count = count() by FindingType, SeverityLevel
+| order by Count desc;
+
+// ===== Network Analysis Examples =====
+
+// 4. Network findings with remote IP analysis
+AWSGuardDuty_Network(7d)
+| where isnotempty(RemoteIp)
+| summarize 
+    FindingCount = count(),
+    UniquePorts = dcount(RemotePort),
+    Countries = make_set(RemoteCountry)
+    by RemoteIp
+| order by FindingCount desc
+| take 20;
+
+// 5. Suspicious network activity by region
+AWSGuardDuty_Network(7d)
+| where SeverityLevel in ("High", "Medium")
+| summarize 
+    Findings = count(),
+    UniqueIPs = dcount(RemoteIp),
+    Protocols = make_set(Protocol)
+    by AwsRegion, FindingType
+| order by Findings desc;
+
+// ===== IAM Analysis Examples =====
+
+// 6. IAM findings by API call
+AWSGuardDuty_IAM(7d)
+| where isnotempty(ApiName)
+| summarize 
+    CallCount = count(),
+    UniqueUsers = dcount(UserName),
+    ErrorCodes = make_set(ErrorCode)
+    by ApiName, ServiceName
+| order by CallCount desc;
+
+// 7. Suspicious IAM activity
+AWSGuardDuty_IAM(7d)
+| where SeverityLevel == "High"
+| project EventTime, FindingType, UserName, ApiName, SourceIp, UserAgent
+| order by EventTime desc;
+
+// ===== ASIM Network Session Examples =====
+
+// 8. Network sessions in ASIM format
+AWSGuardDuty_ASIMNetworkSession(1d)
+| where isnotempty(SrcIpAddr)
+| project 
+    TimeGenerated,
+    SrcIpAddr,
+    DstIpAddr, 
+    DstPortNumber,
+    NetworkProtocol,
+    EventSeverity,
+    ThreatCategory
+| take 50;
+
+// ===== Correlation and Hunting Examples =====
+
+// 9. Multi-account suspicious activity
+AWSGuardDuty_Main(7d)
+| where SeverityLevel in ("High", "Medium")
+| summarize 
+    Accounts = dcount(AwsAccountId),
+    Regions = dcount(AwsRegion),
+    FindingTypes = make_set(FindingType)
+    by bin(EventTime, 1h)
+| where Accounts > 1  // Cross-account activity
+| order by EventTime desc;
+
+// 10. Threat actor tracking by IP
+let suspiciousIPs = AWSGuardDuty_Network(7d)
+    | where SeverityLevel == "High"
+    | distinct RemoteIp;
+//
+AWSGuardDuty_Network(30d)
+| where RemoteIp in (suspiciousIPs)
+| summarize 
+    FirstSeen = min(EventTime),
+    LastSeen = max(EventTime),
+    FindingTypes = make_set(FindingType),
+    TargetAccounts = make_set(AwsAccountId),
+    TargetRegions = make_set(AwsRegion)
+    by RemoteIp, RemoteCountry
+| order by LastSeen desc;
+
+// ===== Operational Queries =====
+
+// 11. Data ingestion health check
+AWSGuardDuty_Main(1d)
+| summarize 
+    RecordCount = count(),
+    LatestRecord = max(TimeGenerated),
+    DataLag = now() - max(TimeGenerated),
+    UniqueAccounts = dcount(AwsAccountId)
+| extend HealthStatus = case(
+    RecordCount == 0, "❌ No data",
+    DataLag > 2h, "⚠️ Data lag detected", 
+    "✅ Healthy"
+);
+
+// 12. Finding type trends over time
+AWSGuardDuty_Main(30d)
+| summarize count() by bin(EventTime, 1d), FindingType
+| render timechart;
+
+// ===== Advanced Analytics Examples =====
+
+// 13. Anomaly detection - unusual finding volumes
+AWSGuardDuty_Main(30d)
+| summarize FindingCount = count() by bin(EventTime, 1h), AwsAccountId
+| where FindingCount > 10  // Threshold for unusual activity
+| order by EventTime desc, FindingCount desc;
+
+// 14. Geolocation analysis
+AWSGuardDuty_Network(7d)
+| where isnotempty(RemoteCountry) and RemoteCountry != "United States"
+| summarize 
+    Findings = count(),
+    UniqueIPs = dcount(RemoteIp),
+    FindingTypes = make_set(FindingType)
+    by RemoteCountry
+| order by Findings desc;
+
+// 15. Resource impact analysis
+AWSGuardDuty_Main(7d)
+| where SeverityLevel in ("High", "Medium")
+| summarize 
+    Findings = count(),
+    SeverityScore = avg(Severity)
+    by ResourceType, AwsRegion
+| order by SeverityScore desc, Findings desc;

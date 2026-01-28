@@ -1,0 +1,122 @@
+// AWSGuardDuty_ASIMNetworkSession
+// ASIM Network Session aligned parser for GuardDuty network findings
+// Maps GuardDuty network data to ASIM Network Session schema
+let AWSGuardDuty_ASIMNetworkSession = (lookback: timespan = timespan(null)) {
+    AWSGuardDuty_Network(lookback)
+    | where isnotempty(RemoteIp)
+    //
+    // ASIM Network Session Schema Mapping
+    | extend
+        // Event fields
+        EventType = "NetworkSession",
+        EventSchemaVersion = "0.2.6",
+        EventVendor = "AWS",
+        EventProduct = "GuardDuty",
+        EventProductVersion = "1.0",
+        EventCount = int(1),
+        EventStartTime = EventTime,
+        EventEndTime = EventTime,
+        EventResult = "Success",  // GuardDuty detects successful connections
+        EventSeverity = SeverityLevel,
+        EventOriginalSeverity = tostring(Severity),
+        EventMessage = Title,
+        EventOriginalType = FindingType,
+        //
+        // Source fields (AWS resource)
+        SrcIpAddr = PrivateIp,
+        SrcPortNumber = LocalPort,
+        SrcHostname = InstanceId,
+        SrcDvcId = InstanceId,
+        SrcDvcIdType = "Other",
+        SrcGeoCountry = AwsRegion,
+        //
+        // Destination fields (remote endpoint)
+        DstIpAddr = RemoteIp,
+        DstPortNumber = RemotePort,
+        DstGeoCountry = RemoteCountry,
+        DstGeoCity = RemoteCity,
+        //
+        // Network fields
+        NetworkProtocol = Protocol,
+        NetworkDirection = TrafficDirection,
+        NetworkSessionId = FindingId,
+        //
+        // Device fields
+        DvcId = InstanceId,
+        DvcIdType = "Other",
+        DvcHostname = InstanceId,
+        DvcOs = "Linux",  // Most common for EC2
+        //
+        // Threat fields
+        ThreatName = FindingType,
+        ThreatCategory = case(
+            FindingType has "Backdoor", "Backdoor",
+            FindingType has "Trojan", "Trojan", 
+            FindingType has "DNS", "DNS",
+            "Suspicious Activity"
+        ),
+        ThreatRiskLevel = toint(Severity * 10),  // Scale 0-89
+        //
+        // Additional context
+        AdditionalFields = bag_pack(
+            "AwsAccountId", AwsAccountId,
+            "AwsRegion", AwsRegion,
+            "VpcId", VpcId,
+            "SubnetId", SubnetId,
+            "InstanceType", InstanceType,
+            "RemoteOrganization", RemoteOrganization,
+            "RemoteIsp", RemoteIsp,
+            "GuardDutyFindingId", FindingId
+        )
+    //
+    // Project ASIM Network Session fields
+    | project 
+        // Standard ASIM fields
+        TimeGenerated,
+        EventType,
+        EventSchemaVersion,
+        EventVendor,
+        EventProduct,
+        EventProductVersion,
+        EventCount,
+        EventStartTime,
+        EventEndTime,
+        EventResult,
+        EventSeverity,
+        EventOriginalSeverity,
+        EventMessage,
+        EventOriginalType,
+        //
+        // Network Session specific
+        SrcIpAddr,
+        SrcPortNumber,
+        SrcHostname,
+        SrcDvcId,
+        SrcDvcIdType,
+        SrcGeoCountry,
+        DstIpAddr,
+        DstPortNumber,
+        DstGeoCountry,
+        DstGeoCity,
+        NetworkProtocol,
+        NetworkDirection,
+        NetworkSessionId,
+        //
+        // Device information
+        DvcId,
+        DvcIdType,
+        DvcHostname,
+        DvcOs,
+        //
+        // Threat information
+        ThreatName,
+        ThreatCategory,
+        ThreatRiskLevel,
+        //
+        // Additional context
+        AdditionalFields,
+        //
+        // Original data for reference
+        RawJson
+};
+AWSGuardDuty_ASIMNetworkSession
