@@ -402,30 +402,17 @@ export class BasicHealthChecker implements HealthChecker {
 
   public async check(): Promise<ComponentHealth> {
     const startTime = Date.now();
-<<<<<<< HEAD
     let timeoutId: NodeJS.Timeout | undefined;
-    
-=======
-
->>>>>>> 0d504b9 (test)
     try {
       // Run check with timeout
       const result = await Promise.race([
         this.checkFunction(),
-<<<<<<< HEAD
-        new Promise<boolean>((_, reject) => 
-          {
-            timeoutId = setTimeout(
-              () => reject(new Error('Health check timeout')),
-              this.timeout
-            );
-          }
-        )
-=======
-        new Promise<boolean>((_, reject) =>
-          setTimeout(() => reject(new Error('Health check timeout')), this.timeout)
-        ),
->>>>>>> 0d504b9 (test)
+        new Promise<boolean>((_, reject) => {
+          timeoutId = setTimeout(
+            () => reject(new Error('Health check timeout')),
+            this.timeout
+          );
+        }),
       ]);
 
       const responseTime = Date.now() - startTime;
