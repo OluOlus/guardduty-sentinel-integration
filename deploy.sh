@@ -209,7 +209,7 @@ if az deployment group create \
     rm -f "$TEMP_PARAMS"
     
     echo ""
-    print_success "🎉 GuardDuty KQL functions have been deployed!"
+    print_success "GuardDuty KQL functions have been deployed!"
     echo ""
     print_status "Next steps:"
     echo "1. Verify your AWS S3 connector is ingesting GuardDuty data"
