@@ -1,0 +1,202 @@
+// GuardDuty Parsing Demo - Real Tor Attack Finding
+// This shows how our KQL functions parse a real GuardDuty finding step by step
+
+// ===== Raw Data Setup =====
+let TorAttackFinding = datatable(
+    TimeGenerated: datetime,
+    EventData: string
+)[
+    datetime(2019-06-09T19:15:04Z), 
+    '{"version":"0","id":"c4b59ed2edb47b698856e71c67bdf10d","detail-type":"GuardDuty Finding","source":"aws.guardduty","account":"123456789012","time":"2019-06-09T19:15:04Z","region":"us-west-2","resources":[],"detail":{"schemaVersion":"2.0","accountId":"123456789012","region":"us-west-2","partition":"aws","id":"c4b59ed2edb47b698856e71c67bdf10d","arn":"arn:aws:guardduty:us-west-2:123456789012:detector/955624e422acc98f6cdb16ab4ab41d23/finding/c4b59ed2edb47b698856e71c67bdf10d","type":"UnauthorizedAccess:EC2/TorIPCaller","resource":{"resourceType":"Instance","instanceDetails":{"instanceId":"i-99999999","instanceType":"m3.xlarge","launchTime":"2016-08-02T02:05:06Z","platform":null,"productCodes":[{"productCodeId":"GeneratedFindingProductCodeId","productCodeType":"GeneratedFindingProductCodeType"}],"iamInstanceProfile":{"arn":"GeneratedFindingInstanceProfileArn","id":"GeneratedFindingInstanceProfileId"},"networkInterfaces":[{"ipv6Addresses":[],"networkInterfaceId":"eni-bfcffe88","privateDnsName":"GeneratedFindingPrivateDnsName","privateIpAddress":"10.0.0.1","privateIpAddresses":[{"privateDnsName":"GeneratedFindingPrivateName","privateIpAddress":"10.0.0.1"}],"subnetId":"GeneratedFindingSubnetId","vpcId":"GeneratedFindingVPCId","securityGroups":[{"groupName":"GeneratedFindingSecurityGroupName","groupId":"GeneratedFindingSecurityId"}],"publicDnsName":"GeneratedFindingPublicDNSName","publicIp":"198.51.100.0"}],"tags":[{"key":"GeneratedFindingInstaceTag1","value":"GeneratedFindingInstaceValue1"},{"key":"GeneratedFindingInstaceTag2","value":"GeneratedFindingInstaceTagValue2"},{"key":"Name","value":"app-instance"}],"instanceState":"running","availabilityZone":"GeneratedFindingInstaceAvailabilityZone","imageId":"ami-99999999","imageDescription":"GeneratedFindingInstaceImageDescription"}},"service":{"serviceName":"guardduty","detectorId":"955624e422acc98f6cdb16ab4ab41d23","action":{"actionType":"NETWORK_CONNECTION","networkConnectionAction":{"connectionDirection":"INBOUND","remoteIpDetails":{"ipAddressV4":"198.51.100.0","organization":{"asn":"-1","asnOrg":"GeneratedFindingASNOrg","isp":"GeneratedFindingISP","org":"GeneratedFindingORG"},"country":{"countryName":"GeneratedFindingCountryName"},"city":{"cityName":"GeneratedFindingCityName"},"geoLocation":{"lat":0,"lon":0}},"remotePortDetails":{"port":39677,"portName":"Unknown"},"localPortDetails":{"port":80,"portName":"HTTP"},"protocol":"TCP","blocked":false}},"resourceRole":"TARGET","additionalInfo":{"sample":true},"eventFirstSeen":"2019-06-09T19:10:08.232Z","eventLastSeen":"2019-06-09T19:10:23.309Z","archived":false,"count":2},"severity":5,"createdAt":"2019-06-09T19:10:08.232Z","updatedAt":"2019-06-09T19:10:23.309Z","title":"Tor Exit node is communicating with EC2 instance i-99999999.","description":"IP address 198.51.100.0 on the Tor Anonymizing Proxy network is communicating with EC2 instance i-99999999."}}'
+];
+
+// ===== Step 1: Raw JSON Parsing =====
+print "=== Step 1: Raw JSON Structure ==="
+| union (
+    TorAttackFinding
+    | extend RawJson = EventData
+    | extend gd_raw = parse_json(EventData)
+    | extend gd = iff(isnotempty(gd_raw.detail), gd_raw.detail, gd_raw)  // Handle EventBridge format
+    | project 
+        Step = "Raw Parsing",
+        IsEventBridge = isnotempty(gd_raw.detail),
+        FindingId = tostring(gd.id),
+        FindingType = tostring(gd.type),
+        ActionType = tostring(gd.service.action.actionType),
+        HasNetworkAction = isnotempty(gd.service.action.networkConnectionAction)
+);
+
+// ===== Step 2: Main Parser Output =====
+print "=== Step 2: AWSGuardDuty_Main() Parsing ==="
+| union (
+    TorAttackFinding
+    | extend RawJson = EventData
+    | extend gd_raw = parse_json(EventData)
+    | extend gd = iff(isnotempty(gd_raw.detail), gd_raw.detail, gd_raw)
+    | where isnotempty(gd)
+    | extend
+        EventTime = todatetime(gd.createdAt),
+        FindingId = tostring(gd.id),
+        FindingType = tostring(gd.type),
+        Severity = todouble(gd.severity),
+        Title = tostring(gd.title),
+        AwsAccountId = tostring(gd.accountId),
+        AwsRegion = tostring(gd.region),
+        ActionType = tostring(gd.service.action.actionType)
+    | extend SeverityLevel = case(
+        Severity >= 7.0, "High",
+        Severity >= 4.0, "Medium", 
+        Severity >= 1.0, "Low",
+        "Informational"
+    )
+    | project 
+        Parser = "Main",
+        FindingId,
+        FindingType,
+        Severity,
+        SeverityLevel,
+        Title,
+        AwsAccountId,
+        AwsRegion,
+        ActionType,
+        EventTime
+);
+
+// ===== Step 3: Network Parser Output =====
+print "=== Step 3: AWSGuardDuty_Network() Parsing ==="
+| union (
+    TorAttackFinding
+    | extend RawJson = EventData
+    | extend gd_raw = parse_json(EventData)
+    | extend gd = iff(isnotempty(gd_raw.detail), gd_raw.detail, gd_raw)
+    | where isnotempty(gd)
+    | extend ActionType = tostring(gd.service.action.actionType)
+    | where ActionType == "NETWORK_CONNECTION"
+    | extend
+        FindingId = tostring(gd.id),
+        FindingType = tostring(gd.type),
+        // Network-specific extraction
+        ConnectionDirection = tostring(gd.service.action.networkConnectionAction.connectionDirection),
+        Protocol = tostring(gd.service.action.networkConnectionAction.protocol),
+        LocalPort = toint(gd.service.action.networkConnectionAction.localPortDetails.port),
+        RemoteIp = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.ipAddressV4),
+        RemotePort = toint(gd.service.action.networkConnectionAction.remotePortDetails.port),
+        RemoteCountry = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.country.countryName),
+        // Instance context
+        InstanceId = tostring(gd.resource.instanceDetails.instanceId),
+        VpcId = tostring(gd.resource.instanceDetails.networkInterfaces[0].vpcId),
+        PrivateIp = tostring(gd.resource.instanceDetails.networkInterfaces[0].privateIpAddress),
+        PublicIp = tostring(gd.resource.instanceDetails.networkInterfaces[0].publicIp)
+    | extend TrafficDirection = case(
+        ConnectionDirection == "INBOUND", "Inbound",
+        ConnectionDirection == "OUTBOUND", "Outbound", 
+        "Unknown"
+    )
+    | project 
+        Parser = "Network",
+        FindingId,
+        FindingType,
+        ConnectionDirection,
+        TrafficDirection,
+        Protocol,
+        LocalPort,
+        RemoteIp,
+        RemotePort,
+        RemoteCountry,
+        InstanceId,
+        VpcId,
+        PrivateIp,
+        PublicIp
+);
+
+// ===== Step 4: ASIM Network Session Output =====
+print "=== Step 4: AWSGuardDuty_ASIMNetworkSession() Parsing ==="
+| union (
+    TorAttackFinding
+    | extend RawJson = EventData
+    | extend gd_raw = parse_json(EventData)
+    | extend gd = iff(isnotempty(gd_raw.detail), gd_raw.detail, gd_raw)
+    | where isnotempty(gd)
+    | extend ActionType = tostring(gd.service.action.actionType)
+    | where ActionType == "NETWORK_CONNECTION"
+    | extend
+        FindingId = tostring(gd.id),
+        FindingType = tostring(gd.type),
+        Severity = todouble(gd.severity),
+        Title = tostring(gd.title),
+        EventTime = todatetime(gd.createdAt),
+        // Network details
+        RemoteIp = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.ipAddressV4),
+        RemotePort = toint(gd.service.action.networkConnectionAction.remotePortDetails.port),
+        LocalPort = toint(gd.service.action.networkConnectionAction.localPortDetails.port),
+        Protocol = tostring(gd.service.action.networkConnectionAction.protocol),
+        ConnectionDirection = tostring(gd.service.action.networkConnectionAction.connectionDirection),
+        RemoteCountry = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.country.countryName),
+        // Instance details
+        InstanceId = tostring(gd.resource.instanceDetails.instanceId),
+        PrivateIp = tostring(gd.resource.instanceDetails.networkInterfaces[0].privateIpAddress),
+        PublicIp = tostring(gd.resource.instanceDetails.networkInterfaces[0].publicIp)
+    | extend
+        // ASIM Network Session Schema Mapping
+        EventType = "NetworkSession",
+        EventVendor = "AWS",
+        EventProduct = "GuardDuty",
+        SrcIpAddr = PrivateIp,  // AWS resource is source
+        DstIpAddr = RemoteIp,   // External IP is destination
+        SrcPortNumber = LocalPort,
+        DstPortNumber = RemotePort,
+        NetworkProtocol = Protocol,
+        NetworkDirection = case(
+            ConnectionDirection == "INBOUND", "Inbound",
+            ConnectionDirection == "OUTBOUND", "Outbound",
+            "Unknown"
+        ),
+        NetworkSessionId = FindingId,
+        EventSeverity = case(
+            Severity >= 7.0, "High",
+            Severity >= 4.0, "Medium",
+            "Low"
+        ),
+        ThreatCategory = case(
+            FindingType has "UnauthorizedAccess", "UnauthorizedAccess",
+            FindingType has "Backdoor", "Backdoor",
+            "Suspicious Activity"
+        ),
+        ThreatRiskLevel = toint(Severity * 10)
+    | project 
+        Parser = "ASIM",
+        EventType,
+        EventVendor,
+        EventProduct,
+        NetworkSessionId,
+        SrcIpAddr,
+        DstIpAddr,
+        SrcPortNumber,
+        DstPortNumber,
+        NetworkProtocol,
+        NetworkDirection,
+        EventSeverity,
+        ThreatCategory,
+        ThreatRiskLevel,
+        EventTime
+);
+
+// ===== Summary: Parsing Effectiveness =====
+print "=== Parsing Summary ==="
+| union (
+    TorAttackFinding
+    | extend RawJson = EventData
+    | extend gd_raw = parse_json(EventData)
+    | extend gd = iff(isnotempty(gd_raw.detail), gd_raw.detail, gd_raw)
+    | summarize 
+        RawDataSize = strlen(EventData),
+        ParsedSuccessfully = countif(isnotempty(gd.id)),
+        FindingType = make_set(tostring(gd.type)),
+        ThreatSeverity = make_set(todouble(gd.severity)),
+        NetworkFieldsExtracted = countif(isnotempty(gd.service.action.networkConnectionAction)),
+        ASIMCompatible = countif(isnotempty(gd.service.action.networkConnectionAction.remoteIpDetails.ipAddressV4))
+    | extend 
+        Summary = "✅ Successfully parsed Tor attack finding with full network context",
+        NextSteps = "Deploy functions and query live GuardDuty data"
+    | project Summary, RawDataSize, ParsedSuccessfully, FindingType, ThreatSeverity, NetworkFieldsExtracted, ASIMCompatible, NextSteps
+);
