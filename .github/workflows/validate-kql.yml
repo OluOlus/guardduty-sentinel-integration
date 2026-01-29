@@ -54,7 +54,7 @@ jobs:
           while IFS= read -r line; do
             echo "$line" | jsonlint || exit 1
           done < sample-data/guardduty_findings.jsonl
-          echo "✅ Sample data is valid JSON"
+          echo "PASS: Sample data is valid JSON"
         fi
         
     - name: Check KQL function files
@@ -70,10 +70,10 @@ jobs:
         
         for file in "${required_files[@]}"; do
           if [ ! -f "$file" ]; then
-            echo "❌ Missing required file: $file"
+            echo "FAIL: Missing required file: $file"
             exit 1
           else
-            echo "✅ Found: $file"
+            echo "PASS: Found: $file"
           fi
         done
         
@@ -106,26 +106,26 @@ if stack:
     sys.exit(1)
 print('Brackets balanced')
 "; then
-            echo "❌ Bracket mismatch in $file"
+            echo "FAIL: Bracket mismatch in $file"
             exit 1
           fi
           
           # Check for required KQL keywords
           if [[ "$file" == *"Config"* ]]; then
             if ! grep -q "datatable" "$file"; then
-              echo "❌ Config function missing datatable"
+              echo "FAIL: Config function missing datatable"
               exit 1
             fi
           fi
           
           if [[ "$file" == *"Main"* ]] || [[ "$file" == *"Network"* ]] || [[ "$file" == *"IAM"* ]]; then
             if ! grep -q "AWSGuardDuty_Config" "$file"; then
-              echo "❌ Parser function should reference AWSGuardDuty_Config"
+              echo "FAIL: Parser function should reference AWSGuardDuty_Config"
               exit 1
             fi
           fi
           
-          echo "✅ Basic syntax check passed for $file"
+          echo "PASS: Basic syntax check passed for $file"
         done
         
     - name: Validate documentation
@@ -141,10 +141,10 @@ print('Brackets balanced')
         
         for doc in "${required_docs[@]}"; do
           if [ ! -f "$doc" ]; then
-            echo "❌ Missing documentation: $doc"
+            echo "FAIL: Missing documentation: $doc"
             exit 1
           else
-            echo "✅ Found: $doc"
+            echo "PASS: Found: $doc"
           fi
         done
         
@@ -156,19 +156,19 @@ print('Brackets balanced')
         
         for param in "${required_params[@]}"; do
           if ! grep -q "\"$param\"" deployment/azuredeploy.json; then
-            echo "❌ Missing parameter in template: $param"
+            echo "FAIL: Missing parameter in template: $param"
             exit 1
           else
-            echo "✅ Found parameter: $param"
+            echo "PASS: Found parameter: $param"
           fi
         done
         
     - name: Summary
       run: |
-        echo "🎉 All validation checks passed!"
-        echo "✅ ARM template structure is valid"
-        echo "✅ JSON files have valid syntax"
-        echo "✅ KQL functions exist and have basic syntax validation"
-        echo "✅ Sample data is valid JSON"
-        echo "✅ Documentation is complete"
-        echo "✅ Deployment parameters are configured"
+        echo "All validation checks passed!"
+        echo "PASS: ARM template structure is valid"
+        echo "PASS: JSON files have valid syntax"
+        echo "PASS: KQL functions exist and have basic syntax validation"
+        echo "PASS: Sample data is valid JSON"
+        echo "PASS: Documentation is complete"
+        echo "PASS: Deployment parameters are configured"

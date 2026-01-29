@@ -113,9 +113,9 @@ AWSGuardDuty_Main(1d)
     DataLag = now() - max(TimeGenerated),
     UniqueAccounts = dcount(AwsAccountId)
 | extend HealthStatus = case(
-    RecordCount == 0, "❌ No data",
-    DataLag > 2h, "⚠️ Data lag detected", 
-    "✅ Healthy"
+    RecordCount == 0, "No data",
+    DataLag > 2h, "Data lag detected", 
+    "Healthy"
 );
 
 // 12. Finding type trends over time

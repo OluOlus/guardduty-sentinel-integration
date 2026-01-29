@@ -16,9 +16,9 @@ print "=== GuardDuty Data Availability Test ==="
         DataSpan = max(TimeGenerated) - min(TimeGenerated)
     | extend 
         TestResult = case(
-            RecordCount == 0, "❌ FAIL: No GuardDuty records found",
-            LatestRecord < ago(24h), "⚠️ WARNING: Latest record is older than 24 hours", 
-            "✅ PASS: GuardDuty data is available"
+            RecordCount == 0, "FAIL: No GuardDuty records found",
+            LatestRecord < ago(24h), "WARNING: Latest record is older than 24 hours", 
+            "PASS: GuardDuty data is available"
         )
     | project TestResult, RecordCount, LatestRecord, OldestRecord, DataSpan
 );
@@ -38,9 +38,9 @@ print "=== GuardDuty Data Structure Test ==="
     | extend 
         StructureScore = (RecordsWithFindingId + RecordsWithSeverity + RecordsWithAccountId + RecordsWithRawJson) * 100 / (TotalRecords * 4),
         TestResult = case(
-            TotalRecords == 0, "❌ FAIL: No parseable GuardDuty records",
-            StructureScore < 80, "⚠️ WARNING: Some records missing required fields",
-            "✅ PASS: GuardDuty data structure is valid"
+            TotalRecords == 0, "FAIL: No parseable GuardDuty records",
+            StructureScore < 80, "WARNING: Some records missing required fields",
+            "PASS: GuardDuty data structure is valid"
         )
     | project TestResult, TotalRecords, StructureScore, UniqueFindingTypes, UniqueAccounts
 );
@@ -56,9 +56,9 @@ print "=== GuardDuty Finding Types Test ==="
         TopFindingTypes = make_list(strcat(FindingType, " (", count_, ")")),
         TotalTypes = count()
     | extend TestResult = case(
-        TotalTypes == 0, "❌ FAIL: No finding types detected",
-        TotalTypes < 3, "⚠️ WARNING: Limited finding type diversity",
-        "✅ PASS: Multiple GuardDuty finding types detected"
+        TotalTypes == 0, "FAIL: No finding types detected",
+        TotalTypes < 3, "WARNING: Limited finding type diversity",
+        "PASS: Multiple GuardDuty finding types detected"
     )
     | project TestResult, TotalTypes, TopFindingTypes
 );
@@ -74,9 +74,9 @@ print "=== Network Findings Test ==="
         UniqueRemoteIPs = dcount(RemoteIp),
         UniqueCountries = dcount(RemoteCountry)
     | extend TestResult = case(
-        NetworkFindings == 0, "⚠️ INFO: No network findings in timeframe",
-        FindingsWithRemoteIP * 100 / NetworkFindings < 50, "⚠️ WARNING: Many network findings missing IP details",
-        "✅ PASS: Network findings have good data quality"
+        NetworkFindings == 0, "INFO: No network findings in timeframe",
+        FindingsWithRemoteIP * 100 / NetworkFindings < 50, "WARNING: Many network findings missing IP details",
+        "PASS: Network findings have good data quality"
     )
     | project TestResult, NetworkFindings, FindingsWithRemoteIP, UniqueRemoteIPs, UniqueCountries
 );
@@ -92,9 +92,9 @@ print "=== IAM Findings Test ==="
         UniqueAPIs = dcount(ApiName),
         UniqueUsers = dcount(UserName)
     | extend TestResult = case(
-        IAMFindings == 0, "⚠️ INFO: No IAM findings in timeframe",
-        FindingsWithAPI * 100 / IAMFindings < 50, "⚠️ WARNING: Many IAM findings missing API details",
-        "✅ PASS: IAM findings have good data quality"
+        IAMFindings == 0, "INFO: No IAM findings in timeframe",
+        FindingsWithAPI * 100 / IAMFindings < 50, "WARNING: Many IAM findings missing API details",
+        "PASS: IAM findings have good data quality"
     )
     | project TestResult, IAMFindings, FindingsWithAPI, UniqueAPIs, UniqueUsers
 );

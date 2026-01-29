@@ -2,7 +2,7 @@
 
 A production-ready KQL parsing and normalization layer for AWS GuardDuty findings in Microsoft Sentinel. This solution works with the existing Microsoft Sentinel AWS S3 connector - no custom ingestion infrastructure required.
 
-## 🎯 What This Solves
+## What This Solves
 
 **The Problem**: Microsoft Sentinel can ingest GuardDuty data via the AWS S3 connector, but teams struggle with:
 - Connector shows "Connected" but no data flows (usually KMS permissions)
@@ -12,7 +12,7 @@ A production-ready KQL parsing and normalization layer for AWS GuardDuty finding
 
 **The Solution**: A complete KQL parsing package that makes GuardDuty data immediately queryable and ASIM-aligned once ingested.
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -50,7 +50,7 @@ az deployment group create \
 AWSGuardDuty_Main(1d) | take 10
 ```
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 AWS GuardDuty → S3 Export → Microsoft Sentinel AWS S3 Connector → AWSGuardDuty Table
@@ -59,13 +59,13 @@ AWS GuardDuty → S3 Export → Microsoft Sentinel AWS S3 Connector → AWSGuard
 ```
 
 **Key Benefits:**
-- ✅ Uses existing, supported Microsoft connector
-- ✅ No custom infrastructure to maintain
-- ✅ Config-driven parsing (change table names once)
-- ✅ ASIM-aligned for cross-source hunting
-- ✅ Built-in troubleshooting for common issues (KMS permissions)
+- Uses existing, supported Microsoft connector
+- No custom infrastructure to maintain
+- Config-driven parsing (change table names once)
+- ASIM-aligned for cross-source hunting
+- Built-in troubleshooting for common issues (KMS permissions)
 
-## 📊 KQL Functions
+## KQL Functions
 
 ### Core Functions
 
@@ -97,7 +97,7 @@ AWSGuardDuty_ASIMNetworkSession(1d)
 | project TimeGenerated, SrcIpAddr, DstIpAddr, DstPortNumber, ThreatCategory
 ```
 
-## 🔧 Configuration
+## Configuration
 
 All functions read from a single config function. Change settings once:
 
@@ -115,7 +115,7 @@ az deployment group create \
   --parameters workspaceName=MyWorkspace guardDutyTableName=CustomTable
 ```
 
-## 🚨 Common Issues & Solutions
+## Common Issues & Solutions
 
 ### Issue 1: Connector "Connected" But No Data
 **Cause**: KMS permissions (90% of cases)
@@ -146,12 +146,12 @@ See [Troubleshooting Guide](docs/troubleshooting.md) for complete solutions.
 ```
 
 ### Expected Results
-- ✅ GuardDuty data is available
-- ✅ Data structure is valid  
-- ✅ Multiple finding types detected
-- ✅ Network and IAM findings parse correctly
+- GuardDuty data is available
+- Data structure is valid  
+- Multiple finding types detected
+- Network and IAM findings parse correctly
 
-## 📚 Documentation
+## Documentation
 
 | Guide | Purpose |
 |-------|---------|
@@ -159,7 +159,7 @@ See [Troubleshooting Guide](docs/troubleshooting.md) for complete solutions.
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and diagnostic queries |
 | [KMS Permissions](docs/kms-permissions.md) | Fixing the #1 cause of ingestion failures |
 
-## 🎯 What's Included
+## What's Included
 
 ```
 guardduty-sentinel-integration/
@@ -191,7 +191,7 @@ guardduty-sentinel-integration/
 3. Test with sample data
 4. Submit a pull request
 
-## 📄 License
+## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
 
@@ -201,14 +201,14 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - **Connector Issues**: Check Microsoft Sentinel documentation
 - **AWS GuardDuty**: Consult AWS documentation
 
-## 🏷️ Version
+## Version
 
 Current version: 1.0.0 (Production Ready)
 
 **What's New in 1.0.0:**
-- ✅ Complete redesign to use existing AWS S3 connector
-- ✅ Config-driven KQL parsing functions
-- ✅ ASIM network session normalization
-- ✅ Comprehensive troubleshooting guides
-- ✅ One-click ARM template deployment
-- ✅ Production-tested with real GuardDuty data
+- Complete redesign to use existing AWS S3 connector
+- Config-driven KQL parsing functions
+- ASIM network session normalization
+- Comprehensive troubleshooting guides
+- One-click ARM template deployment
+- Production-tested with real GuardDuty data

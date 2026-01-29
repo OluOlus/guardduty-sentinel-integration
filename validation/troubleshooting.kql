@@ -62,10 +62,10 @@ print "=== Diagnostic: Ingestion Patterns ==="
         MinRecordsPerHour = min(RecordCount)
     | extend 
         IngestionPattern = case(
-            HoursWithData == 0, "❌ No data in last 24 hours",
-            HoursWithData < 12, "⚠️ Intermittent ingestion - possible KMS/permission issues",
-            MinRecordsPerHour == 0, "⚠️ Gaps in ingestion - check connector health",
-            "✅ Consistent ingestion pattern"
+            HoursWithData == 0, "No data in last 24 hours",
+            HoursWithData < 12, "Intermittent ingestion - possible KMS/permission issues",
+            MinRecordsPerHour == 0, "Gaps in ingestion - check connector health",
+            "Consistent ingestion pattern"
         )
     | project IngestionPattern, HoursWithData, AvgRecordsPerHour, MaxRecordsPerHour
 );
@@ -89,9 +89,9 @@ print "=== Diagnostic: Data Quality Issues ==="
         JsonParseRate = ValidJsonRecords * 100 / TotalRecords,
         DataQualityScore = (RecordsWithFindingId + RecordsWithSeverity + RecordsWithAccountId) * 100 / (TotalRecords * 3),
         QualityAssessment = case(
-            JsonParseRate < 90, "❌ JSON parsing issues - check raw data format",
-            DataQualityScore < 80, "⚠️ Missing required fields - possible schema changes",
-            "✅ Good data quality"
+            JsonParseRate < 90, "JSON parsing issues - check raw data format",
+            DataQualityScore < 80, "Missing required fields - possible schema changes",
+            "Good data quality"
         )
     | project QualityAssessment, TotalRecords, JsonParseRate, DataQualityScore
 );
@@ -144,9 +144,9 @@ print "=== Quick Health Check ==="
         UniqueFindings = dcount(FindingId)
     | extend 
         HealthStatus = case(
-            RecentRecords == 0, "❌ No recent data - check connector",
-            LatestRecord < ago(2h), "⚠️ Data delay - possible ingestion lag",
-            "✅ Healthy ingestion"
+            RecentRecords == 0, "No recent data - check connector",
+            LatestRecord < ago(2h), "Data delay - possible ingestion lag",
+            "Healthy ingestion"
         )
     | project HealthStatus, RecentRecords, LatestRecord, UniqueFindings
 )
