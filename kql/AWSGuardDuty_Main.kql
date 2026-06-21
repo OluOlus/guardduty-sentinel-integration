@@ -1,61 +1,124 @@
 // AWSGuardDuty_Main
-// Main parser function for GuardDuty findings
-// Extracts core fields and provides consistent schema
+// Base parser for all GuardDuty findings.
+// Handles both direct JSON format and EventBridge envelope format automatically.
+// Downstream parsers (Network, IAM, S3, EKS) call this function and consume the `gd` column.
 let AWSGuardDuty_Main = (lookback: timespan = timespan(null)) {
-    let _lookback = iff(isnull(lookback), 
-        totimespan(toscalar(AWSGuardDuty_Config() | where Setting == "DefaultLookback" | project Value)), 
-        lookback);
-    let _tableName = toscalar(AWSGuardDuty_Config() | where Setting == "TableName" | project Value);
-    let _rawColumn = toscalar(AWSGuardDuty_Config() | where Setting == "RawColumn" | project Value);
+    let config = AWSGuardDuty_Config();
+    let _defaultLookback  = totimespan(toscalar(config | where Setting == "DefaultLookback"  | project Value));
+    let _maxLookback      = totimespan(toscalar(config | where Setting == "MaxLookback"      | project Value));
+    let _lookback = iff(
+        isnull(lookback),
+        _defaultLookback,
+        iff(lookback > _maxLookback, _maxLookback, lookback)
+    );
+    let _tableName       = toscalar(config | where Setting == "TableName"              | project Value);
+    let _rawColumn       = toscalar(config | where Setting == "RawColumn"              | project Value);
+    let _altRawColumn    = toscalar(config | where Setting == "AlternateRawColumn"     | project Value);
+    let _enableValidation = tobool(toscalar(config | where Setting == "EnableDataValidation"    | project Value));
+    let _handleEnvelope   = tobool(toscalar(config | where Setting == "HandleEventBridgeEnvelope" | project Value));
+    let _minSeverity     = todouble(toscalar(config | where Setting == "MinSeverityScore" | project Value));
+    let _maxSeverity     = todouble(toscalar(config | where Setting == "MaxSeverityScore" | project Value));
+    let _parserVersion   = toscalar(config | where Setting == "ParserVersion"           | project Value);
     //
-    // Dynamic table access based on config
     table(_tableName)
     | where TimeGenerated >= ago(_lookback)
-    | extend RawJson = column_ifexists(_rawColumn, "")
+    // Resolve raw JSON from primary column with fallback to alternate
+    | extend RawJson = iff(
+        isnotempty(column_ifexists(_rawColumn, "")),
+        column_ifexists(_rawColumn, ""),
+        column_ifexists(_altRawColumn, "")
+    )
     | where isnotempty(RawJson)
-    | extend gd = parse_json(RawJson)
-    | where isnotempty(gd)
-    //
+    // Parse JSON; drop unparseable rows
+    | extend _raw = try_parse_json(RawJson)
+    | where isnotempty(_raw) and _raw != dynamic({})
+    // Auto-detect and unwrap EventBridge envelope.
+    // EventBridge delivers findings as: {"detail-type":"GuardDuty Finding","detail":{...actual finding...}}
+    // Direct format has schemaVersion at the root level.
+    | extend gd = iff(
+        _handleEnvelope and tostring(_raw["detail-type"]) == "GuardDuty Finding",
+        _raw.detail,
+        _raw
+    )
+    | project-away _raw
+    // Require a parseable finding object
+    | where isnotempty(gd) and gd != dynamic({})
+    // Validate schema version when validation is enabled
+    | extend SchemaVersion = tostring(gd.schemaVersion)
+    | where not(_enableValidation) or (isnotempty(SchemaVersion) and SchemaVersion startswith "2.")
     // Extract core GuardDuty fields
     | extend
-        EventTime = todatetime(gd.createdAt),
-        UpdatedTime = todatetime(gd.updatedAt),
-        FindingId = tostring(gd.id),
-        FindingType = tostring(gd.type),
-        Severity = todouble(gd.severity),
-        Title = tostring(gd.title),
-        Description = tostring(gd.description),
+        EventTime    = iff(isnotempty(tostring(gd.createdAt)), todatetime(gd.createdAt), TimeGenerated),
+        UpdatedTime  = todatetime(gd.updatedAt),
+        FindingId    = tostring(gd.id),
+        FindingType  = tostring(gd.type),
+        Severity     = iff(
+            isnull(todouble(gd.severity)) or todouble(gd.severity) < _minSeverity or todouble(gd.severity) > _maxSeverity,
+            0.0,
+            todouble(gd.severity)
+        ),
+        Title        = tostring(gd.title),
+        Description  = tostring(gd.description),
         AwsAccountId = tostring(gd.accountId),
-        AwsRegion = tostring(gd.region),
-        ServiceName = tostring(gd.service.serviceName),
+        AwsRegion    = tostring(gd.region),
+        Partition    = tostring(gd.partition),
+        DetectorId   = tostring(gd.service.detectorId),
+        ServiceName  = tostring(gd.service.serviceName),
         ResourceType = tostring(gd.resource.resourceType),
-        ActionType = tostring(gd.service.action.actionType)
-    //
-    // Standardize severity levels
+        ActionType   = tostring(gd.service.action.actionType)
+    // Data quality scoring (0–100, 20 pts per required field)
+    | extend DataQualityScore =
+        iff(isnotempty(FindingId),    20, 0) +
+        iff(isnotempty(FindingType),  20, 0) +
+        iff(Severity > 0,             20, 0) +
+        iff(isnotempty(AwsAccountId), 20, 0) +
+        iff(isnotempty(AwsRegion),    20, 0)
+    // Drop low-quality records when validation is enabled
+    | where not(_enableValidation) or DataQualityScore >= 60
+    // Map severity to human-readable level
     | extend SeverityLevel = case(
+        Severity >= 8.5, "Critical",
         Severity >= 7.0, "High",
-        Severity >= 4.0, "Medium", 
+        Severity >= 4.0, "Medium",
         Severity >= 1.0, "Low",
-        "Informational"
+        Severity > 0,    "Informational",
+        "Unknown"
     )
-    //
-    // Project final schema
-    | project 
+    | extend
+        ParsingTimestamp = now(),
+        ParserVersion    = _parserVersion,
+        RecordSource     = "AWSGuardDuty_Main"
+    | project
+        // Timestamps
         TimeGenerated,
         EventTime,
         UpdatedTime,
+        ParsingTimestamp,
+        // Core identifiers
         FindingId,
         FindingType,
+        DetectorId,
+        // Severity
         Severity,
         SeverityLevel,
+        // Content
         Title,
         Description,
+        // AWS context
         AwsAccountId,
         AwsRegion,
+        Partition,
+        // Resource context
         ServiceName,
         ResourceType,
         ActionType,
+        // Quality and metadata
+        DataQualityScore,
+        SchemaVersion,
+        ParserVersion,
+        RecordSource,
+        // Raw data for traceability and downstream parsers
         RawJson,
-        gd  // Parsed JSON for downstream parsers
+        gd
 };
 AWSGuardDuty_Main

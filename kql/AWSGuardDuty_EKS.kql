@@ -1,0 +1,153 @@
+// AWSGuardDuty_EKS
+// EKS/Kubernetes-focused parser for GuardDuty findings.
+// Covers EKS audit log detections (*:Kubernetes/*) and EKS runtime detections (*:Runtime/*).
+// Extracts Kubernetes API call details, user context, pod/namespace context, and process information.
+let AWSGuardDuty_EKS = (lookback: timespan = timespan(null)) {
+    AWSGuardDuty_Main(lookback)
+    | where FindingType has "Kubernetes/"
+        or FindingType has "Runtime/"
+        or ResourceType in ("EKSCluster", "Container")
+        or FindingType has_any(
+            "CredentialAccess:Kubernetes", "DefenseEvasion:Kubernetes", "Discovery:Kubernetes",
+            "Execution:Kubernetes", "Impact:Kubernetes", "Persistence:Kubernetes",
+            "PrivilegeEscalation:Kubernetes", "Collection:Kubernetes",
+            "CredentialAccess:Runtime", "DefenseEvasion:Runtime", "Discovery:Runtime",
+            "Execution:Runtime", "Impact:Runtime", "Persistence:Runtime",
+            "PrivilegeEscalation:Runtime", "Exfiltration:Runtime"
+        )
+    // EKS cluster details
+    | extend
+        ClusterName = tostring(gd.resource.eksClusterDetails.name),
+        ClusterArn  = tostring(gd.resource.eksClusterDetails.arn),
+        ClusterStatus = tostring(gd.resource.eksClusterDetails.status),
+        ClusterCreatedAt = todatetime(gd.resource.eksClusterDetails.createdAt),
+        ClusterTags = gd.resource.eksClusterDetails.tags
+    // Kubernetes audit log action details
+    | extend _k8s = gd.service.action.kubernetesApiCallAction
+    | extend
+        K8sApiName          = tostring(_k8s.requestUri),
+        K8sApiVerb          = tostring(_k8s.verb),
+        K8sSourceIp         = tostring(_k8s.sourceIPs[0]),
+        K8sUserAgent        = tostring(_k8s.userAgent),
+        K8sStatusCode       = toint(_k8s.statusCode),
+        K8sIsAdminCall      = tobool(_k8s.parameters contains "admin")
+    // Kubernetes user context
+    | extend _k8sUser = _k8s.requestUri
+    | extend _k8sUserDetails = gd.service.action.kubernetesApiCallAction.requestUri
+    | extend
+        K8sUsername   = tostring(gd.service.action.kubernetesApiCallAction.requestUri),
+        K8sUserGroups = tostring(gd.service.action.kubernetesApiCallAction.userAgent)
+    // Re-extract user details properly from the Kubernetes user context
+    | extend _ku = gd.service.action.kubernetesApiCallAction
+    | extend
+        K8sUsername    = coalesce(
+            tostring(gd.resource.eksClusterDetails.name),
+            tostring(_ku.requestUri)
+        ),
+        K8sUserName    = tostring(gd.service.additionalInfo.kubernetesUserName),
+        K8sUserGroups  = tostring(gd.service.additionalInfo.kubernetesUserGroups),
+        K8sUserType    = case(
+            tostring(gd.service.additionalInfo.kubernetesUserName) startswith "system:serviceaccount:", "ServiceAccount",
+            tostring(gd.service.additionalInfo.kubernetesUserName) startswith "system:", "System",
+            isnotempty(tostring(gd.service.additionalInfo.kubernetesUserName)), "User",
+            "Unknown"
+        )
+    // Kubernetes workload context (namespace, object kind/name)
+    | extend
+        K8sNamespace   = tostring(gd.service.additionalInfo.kubernetesWorkloadDetails.namespace),
+        K8sObjectKind  = tostring(gd.service.additionalInfo.kubernetesWorkloadDetails.type),
+        K8sObjectName  = tostring(gd.service.additionalInfo.kubernetesWorkloadDetails.name),
+        K8sContainerImage = tostring(gd.service.additionalInfo.kubernetesWorkloadDetails.containers[0].image),
+        K8sContainerName  = tostring(gd.service.additionalInfo.kubernetesWorkloadDetails.containers[0].name),
+        K8sIsPrivileged   = tobool(gd.service.additionalInfo.kubernetesWorkloadDetails.containers[0].securityContext.privileged)
+    // Runtime process context (EKS Runtime Monitoring findings)
+    | extend _rt = gd.service.runtimeDetails
+    | extend
+        RuntimeProcess     = tostring(_rt.process.name),
+        RuntimeProcessPath = tostring(_rt.process.executablePath),
+        RuntimeProcessPid  = toint(_rt.process.pid),
+        RuntimeProcessUser = tostring(_rt.process.user),
+        RuntimeProcessArgs = tostring(_rt.process.executableSha256),
+        RuntimeContext     = tostring(_rt.context.commandLineExample),
+        RuntimeFilePath    = tostring(_rt.context.targetProcess.executablePath)
+    // Network context for Kubernetes API calls
+    | extend
+        K8sRemoteIp      = tostring(gd.service.action.kubernetesApiCallAction.sourceIPs[0]),
+        K8sRemoteCountry = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.country.countryName)
+    // Threat categorisation for EKS findings
+    | extend K8sThreatCategory = case(
+        FindingType has "PrivilegeEscalation",   "Privilege Escalation",
+        FindingType has "CredentialAccess",       "Credential Access",
+        FindingType has "Persistence",            "Persistence",
+        FindingType has "DefenseEvasion",         "Defense Evasion",
+        FindingType has "Discovery",              "Discovery",
+        FindingType has "Execution",              "Execution",
+        FindingType has "Impact",                 "Impact",
+        FindingType has "Exfiltration",           "Exfiltration",
+        FindingType has "Collection",             "Collection",
+        "Kubernetes Anomaly"
+    )
+    // Risk scoring
+    | extend K8sRiskScore =
+        iff(SeverityLevel == "Critical",    40, 0) +
+        iff(SeverityLevel == "High",        30, 0) +
+        iff(SeverityLevel == "Medium",      20, 0) +
+        iff(SeverityLevel == "Low",         10, 0) +
+        iff(K8sIsPrivileged == true,        20, 0) +
+        iff(K8sThreatCategory in ("Privilege Escalation", "Credential Access"), 15, 0) +
+        iff(K8sUserType == "ServiceAccount" and K8sThreatCategory != "Discovery", 10, 0)
+    | project-away _k8s, _k8sUser, _k8sUserDetails, _ku, _rt
+    | project
+        // Core identifiers
+        TimeGenerated,
+        EventTime,
+        FindingId,
+        FindingType,
+        K8sThreatCategory,
+        Severity,
+        SeverityLevel,
+        K8sRiskScore,
+        Title,
+        Description,
+        AwsAccountId,
+        AwsRegion,
+        // EKS cluster context
+        ClusterName,
+        ClusterArn,
+        ClusterStatus,
+        ClusterCreatedAt,
+        // Kubernetes API call details
+        K8sApiName,
+        K8sApiVerb,
+        K8sStatusCode,
+        K8sSourceIp,
+        K8sUserAgent,
+        K8sIsAdminCall,
+        // Kubernetes identity
+        K8sUserName,
+        K8sUserType,
+        K8sUserGroups,
+        // Kubernetes workload context
+        K8sNamespace,
+        K8sObjectKind,
+        K8sObjectName,
+        K8sContainerImage,
+        K8sContainerName,
+        K8sIsPrivileged,
+        // Runtime process context (Runtime Monitoring findings)
+        RuntimeProcess,
+        RuntimeProcessPath,
+        RuntimeProcessPid,
+        RuntimeProcessUser,
+        RuntimeProcessArgs,
+        RuntimeContext,
+        RuntimeFilePath,
+        // Network context
+        K8sRemoteIp,
+        K8sRemoteCountry,
+        // Metadata
+        ParserVersion,
+        RecordSource = "AWSGuardDuty_EKS",
+        RawJson
+};
+AWSGuardDuty_EKS

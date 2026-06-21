@@ -1,0 +1,146 @@
+// AWSGuardDuty_S3
+// S3-focused parser for GuardDuty findings.
+// Covers Policy:S3/*, Stealth:S3/*, Discovery:S3/*, Impact:S3/*, Exfiltration:S3/* finding types.
+// Extracts bucket configuration, public access posture, encryption details, and the IAM caller context.
+let AWSGuardDuty_S3 = (lookback: timespan = timespan(null)) {
+    AWSGuardDuty_Main(lookback)
+    | where ResourceType == "S3Bucket"
+        or FindingType has "S3/"
+        or FindingType has_any("Policy:S3", "Stealth:S3", "Discovery:S3", "Impact:S3", "Exfiltration:S3",
+                               "PenTest:S3", "Backdoor:S3", "Trojan:S3")
+    // S3 bucket details (first bucket in the list — findings typically affect one bucket)
+    | extend _bucket = gd.resource.s3BucketDetails[0]
+    | extend
+        BucketName       = tostring(_bucket.name),
+        BucketArn        = tostring(_bucket.arn),
+        BucketType       = tostring(_bucket.type),           // e.g. "Destination"
+        BucketCreatedAt  = todatetime(_bucket.createdAt),
+        BucketOwnerId    = tostring(_bucket.owner.id),
+        BucketTags       = _bucket.tags
+    // Encryption configuration
+    | extend
+        EncryptionType   = tostring(_bucket.defaultServerSideEncryption.encryptionType),
+        KmsKeyArn        = tostring(_bucket.defaultServerSideEncryption.kmsMasterKeyArn)
+    // Bucket-level public access block
+    | extend _bpa = _bucket.publicAccess.permissionConfiguration.bucketLevelPermissions.blockPublicAccess
+    | extend
+        BlockPublicAcls      = tobool(_bpa.blockPublicAcls),
+        IgnorePublicAcls     = tobool(_bpa.ignorePublicAcls),
+        BlockPublicPolicy    = tobool(_bpa.blockPublicPolicy),
+        RestrictPublicBuckets= tobool(_bpa.restrictPublicBuckets)
+    // Account-level public access block
+    | extend _apa = _bucket.publicAccess.permissionConfiguration.accountLevelPermissions.blockPublicAccess
+    | extend
+        AccountBlockPublicAcls      = tobool(_apa.blockPublicAcls),
+        AccountIgnorePublicAcls     = tobool(_apa.ignorePublicAcls),
+        AccountBlockPublicPolicy    = tobool(_apa.blockPublicPolicy),
+        AccountRestrictPublicBuckets= tobool(_apa.restrictPublicBuckets)
+    // ACL-level public access flags (bucket level)
+    | extend _acl = _bucket.publicAccess.permissionConfiguration.bucketLevelPermissions.accessControlList
+    | extend
+        AclAllowsPublicRead  = tobool(_acl.allowsPublicReadAccess),
+        AclAllowsPublicWrite = tobool(_acl.allowsPublicWriteAccess)
+    // Bucket policy public access flags
+    | extend _policy = _bucket.publicAccess.permissionConfiguration.bucketLevelPermissions.bucketPolicy
+    | extend
+        PolicyAllowsPublicRead  = tobool(_policy.allowsPublicReadAccess),
+        PolicyAllowsPublicWrite = tobool(_policy.allowsPublicWriteAccess)
+    // Effective permission (NOT_PUBLIC / PUBLIC)
+    | extend EffectivePermission = tostring(_bucket.publicAccess.effectivePermission)
+    // IAM caller context when the finding has an access key (e.g. API-driven S3 access)
+    | extend
+        CallerUserName    = tostring(gd.resource.accessKeyDetails.userName),
+        CallerUserType    = tostring(gd.resource.accessKeyDetails.userType),
+        CallerAccessKeyId = tostring(gd.resource.accessKeyDetails.accessKeyId),
+        CallerPrincipalId = tostring(gd.resource.accessKeyDetails.principalId)
+    // Remote IP when available (e.g. Discovery or Exfiltration findings)
+    | extend
+        RemoteIp      = coalesce(
+            tostring(gd.service.action.awsApiCallAction.remoteIpDetails.ipAddressV4),
+            tostring(gd.service.remoteIpDetails.ipAddressV4)
+        ),
+        RemoteCountry = coalesce(
+            tostring(gd.service.action.awsApiCallAction.remoteIpDetails.country.countryName),
+            tostring(gd.service.remoteIpDetails.country.countryName)
+        ),
+        ApiName       = tostring(gd.service.action.awsApiCallAction.api)
+    // S3 risk categorisation
+    | extend S3RiskCategory = case(
+        FindingType has_any("BucketPublicAccessGranted", "BucketBlockPublicAccessDisabled"),   "Public Exposure",
+        FindingType has "BucketEncryptionDisabled",                                             "Encryption Disabled",
+        FindingType has "ServerAccessLoggingDisabled",                                          "Audit Log Disabled",
+        FindingType has "Discovery",                                                            "Reconnaissance",
+        FindingType has "Exfiltration",                                                         "Data Exfiltration",
+        FindingType has "Impact",                                                               "Data Impact",
+        FindingType has "PenTest",                                                              "Penetration Testing",
+        "S3 Anomaly"
+    )
+    // Exposure severity modifier: mark exposed buckets clearly
+    | extend IsPubliclyExposed = EffectivePermission == "PUBLIC"
+        or AclAllowsPublicRead == true
+        or AclAllowsPublicWrite == true
+        or PolicyAllowsPublicRead == true
+        or PolicyAllowsPublicWrite == true
+    // Risk score
+    | extend S3RiskScore =
+        iff(SeverityLevel == "Critical", 40, 0) +
+        iff(SeverityLevel == "High",     30, 0) +
+        iff(SeverityLevel == "Medium",   20, 0) +
+        iff(SeverityLevel == "Low",      10, 0) +
+        iff(IsPubliclyExposed,           30, 0) +
+        iff(EncryptionType == "NONE" or isempty(EncryptionType), 20, 0) +
+        iff(S3RiskCategory == "Data Exfiltration", 10, 0)
+    | project-away _bucket, _bpa, _apa, _acl, _policy
+    | project
+        // Core identifiers
+        TimeGenerated,
+        EventTime,
+        FindingId,
+        FindingType,
+        S3RiskCategory,
+        Severity,
+        SeverityLevel,
+        S3RiskScore,
+        Title,
+        Description,
+        AwsAccountId,
+        AwsRegion,
+        // Bucket identity
+        BucketName,
+        BucketArn,
+        BucketType,
+        BucketCreatedAt,
+        BucketOwnerId,
+        // Encryption
+        EncryptionType,
+        KmsKeyArn,
+        // Public access configuration
+        IsPubliclyExposed,
+        EffectivePermission,
+        BlockPublicAcls,
+        IgnorePublicAcls,
+        BlockPublicPolicy,
+        RestrictPublicBuckets,
+        AccountBlockPublicAcls,
+        AccountIgnorePublicAcls,
+        AccountBlockPublicPolicy,
+        AccountRestrictPublicBuckets,
+        AclAllowsPublicRead,
+        AclAllowsPublicWrite,
+        PolicyAllowsPublicRead,
+        PolicyAllowsPublicWrite,
+        // IAM caller context
+        CallerUserName,
+        CallerUserType,
+        CallerAccessKeyId,
+        CallerPrincipalId,
+        ApiName,
+        // Network context
+        RemoteIp,
+        RemoteCountry,
+        // Metadata
+        ParserVersion,
+        RecordSource = "AWSGuardDuty_S3",
+        RawJson
+};
+AWSGuardDuty_S3

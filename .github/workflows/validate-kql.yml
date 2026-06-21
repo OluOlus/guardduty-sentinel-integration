@@ -7,168 +7,259 @@ on:
       - 'kql/**'
       - 'deployment/**'
       - 'sample-data/**'
+      - 'validation/**'
   pull_request:
     branches: [ main ]
     paths:
       - 'kql/**'
       - 'deployment/**'
       - 'sample-data/**'
+      - 'validation/**'
 
 jobs:
-  validate-kql:
+  validate:
+    name: Validate KQL, ARM, and sample data
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Checkout code
+    - name: Checkout
       uses: actions/checkout@v4
-      
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        
-    - name: Install dependencies
+
+    # ── JSON / JSONL validation ────────────────────────────────────────────────
+    - name: Validate ARM template JSON
       run: |
-        npm install -g @azure/arm-template-validator
-        npm install jsonlint
-        
-    - name: Validate ARM template
+        echo "=== Validating JSON files ==="
+        python3 -c "
+        import json, sys, pathlib
+        errors = []
+        for f in pathlib.Path('deployment').rglob('*.json'):
+            try:
+                json.loads(f.read_text())
+                print(f'PASS: {f}')
+            except json.JSONDecodeError as e:
+                errors.append(f'FAIL: {f} -- {e}')
+        for e in errors:
+            print(e, file=sys.stderr)
+        sys.exit(len(errors))
+        "
+
+    - name: Validate sample JSONL data
       run: |
-        echo "Validating ARM deployment template..."
-        az deployment group validate \
-          --resource-group dummy-rg \
-          --template-file deployment/azuredeploy.json \
-          --parameters deployment/azuredeploy.parameters.json \
-          --no-prompt || echo "ARM validation requires Azure login - skipping in CI"
-          
-    - name: Validate JSON syntax
+        echo "=== Validating sample-data/guardduty_findings.jsonl ==="
+        python3 -c "
+        import json, sys
+        path = 'sample-data/guardduty_findings.jsonl'
+        errors = []
+        with open(path) as f:
+            for i, line in enumerate(f, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    json.loads(line)
+                except json.JSONDecodeError as e:
+                    errors.append(f'Line {i}: {e}')
+        if errors:
+            for e in errors:
+                print(e, file=sys.stderr)
+            sys.exit(1)
+        print(f'PASS: all lines in {path} are valid JSON')
+        "
+
+    # ── Required file presence ─────────────────────────────────────────────────
+    - name: Check required KQL parser files
       run: |
-        echo "Validating JSON files..."
-        find deployment/ -name "*.json" -exec jsonlint {} \;
-        
-    - name: Validate sample data
-      run: |
-        echo "Validating sample GuardDuty data..."
-        if [ -f "sample-data/guardduty_findings.jsonl" ]; then
-          # Check each line is valid JSON
-          while IFS= read -r line; do
-            echo "$line" | jsonlint || exit 1
-          done < sample-data/guardduty_findings.jsonl
-          echo "PASS: Sample data is valid JSON"
-        fi
-        
-    - name: Check KQL function files
-      run: |
-        echo "Checking KQL function files exist..."
-        required_files=(
+        echo "=== Checking required KQL files ==="
+        required=(
           "kql/AWSGuardDuty_Config.kql"
           "kql/AWSGuardDuty_Main.kql"
           "kql/AWSGuardDuty_Network.kql"
           "kql/AWSGuardDuty_IAM.kql"
+          "kql/AWSGuardDuty_S3.kql"
+          "kql/AWSGuardDuty_EKS.kql"
           "kql/AWSGuardDuty_ASIMNetworkSession.kql"
+          "kql/AWSGuardDuty_Schema.kql"
         )
-        
-        for file in "${required_files[@]}"; do
-          if [ ! -f "$file" ]; then
-            echo "FAIL: Missing required file: $file"
-            exit 1
+        fail=0
+        for f in "${required[@]}"; do
+          if [ -f "$f" ]; then
+            echo "PASS: $f"
           else
-            echo "PASS: Found: $file"
+            echo "FAIL: missing $f" >&2
+            fail=1
           fi
         done
-        
-    - name: Validate KQL syntax (basic)
+        exit $fail
+
+    - name: Check required documentation files
       run: |
-        echo "Basic KQL syntax validation..."
-        # Check for common syntax issues
-        for file in kql/*.kql; do
-          echo "Checking $file..."
-          
-          # Check for balanced parentheses
-          if ! python3 -c "
-import sys
-content = open('$file').read()
-stack = []
-for char in content:
-    if char in '([{':
-        stack.append(char)
-    elif char in ')]}':
-        if not stack:
-            print('Unmatched closing bracket')
-            sys.exit(1)
-        opening = stack.pop()
-        pairs = {'(': ')', '[': ']', '{': '}'}
-        if pairs.get(opening) != char:
-            print('Mismatched brackets')
-            sys.exit(1)
-if stack:
-    print('Unmatched opening bracket')
-    sys.exit(1)
-print('Brackets balanced')
-"; then
-            echo "FAIL: Bracket mismatch in $file"
-            exit 1
-          fi
-          
-          # Check for required KQL keywords
-          if [[ "$file" == *"Config"* ]]; then
-            if ! grep -q "datatable" "$file"; then
-              echo "FAIL: Config function missing datatable"
-              exit 1
-            fi
-          fi
-          
-          if [[ "$file" == *"Main"* ]] || [[ "$file" == *"Network"* ]] || [[ "$file" == *"IAM"* ]]; then
-            if ! grep -q "AWSGuardDuty_Config" "$file"; then
-              echo "FAIL: Parser function should reference AWSGuardDuty_Config"
-              exit 1
-            fi
-          fi
-          
-          echo "PASS: Basic syntax check passed for $file"
-        done
-        
-    - name: Validate documentation
-      run: |
-        echo "Checking documentation completeness..."
-        required_docs=(
+        echo "=== Checking required documentation files ==="
+        required=(
+          "README.md"
           "docs/connector-setup.md"
           "docs/troubleshooting.md"
           "docs/kms-permissions.md"
           "validation/smoke_tests.kql"
           "sample-data/test_queries.kql"
         )
-        
-        for doc in "${required_docs[@]}"; do
-          if [ ! -f "$doc" ]; then
-            echo "FAIL: Missing documentation: $doc"
-            exit 1
+        fail=0
+        for f in "${required[@]}"; do
+          if [ -f "$f" ]; then
+            echo "PASS: $f"
           else
-            echo "PASS: Found: $doc"
+            echo "FAIL: missing $f" >&2
+            fail=1
           fi
         done
-        
-    - name: Check deployment template parameters
+        exit $fail
+
+    # ── KQL syntax checks ──────────────────────────────────────────────────────
+    - name: KQL bracket balance check
       run: |
-        echo "Validating deployment template parameters..."
-        # Check that required parameters exist in template
-        required_params=("workspaceName" "guardDutyTableName" "rawDataColumn" "defaultLookback")
-        
-        for param in "${required_params[@]}"; do
-          if ! grep -q "\"$param\"" deployment/azuredeploy.json; then
-            echo "FAIL: Missing parameter in template: $param"
-            exit 1
-          else
-            echo "PASS: Found parameter: $param"
-          fi
-        done
-        
+        echo "=== Checking KQL bracket balance ==="
+        python3 -c "
+        import sys, pathlib
+        errors = []
+        for f in pathlib.Path('kql').glob('*.kql'):
+            content = f.read_text()
+            stack = []
+            pairs = {'(': ')', '[': ']', '{': '}'}
+            in_str = False
+            for ch in content:
+                if ch == '\"' and not in_str:
+                    in_str = True
+                elif ch == '\"' and in_str:
+                    in_str = False
+                elif in_str:
+                    continue
+                elif ch in pairs:
+                    stack.append(ch)
+                elif ch in pairs.values():
+                    if not stack or pairs.get(stack[-1]) != ch:
+                        errors.append(str(f) + ': mismatched bracket')
+                        break
+                    stack.pop()
+            if stack:
+                errors.append(str(f) + ': unclosed brackets ' + str(stack))
+            else:
+                print('PASS: ' + str(f))
+        for e in errors:
+            print(e, file=sys.stderr)
+        sys.exit(len(errors))
+        "
+
+    - name: KQL content rules check
+      run: |
+        echo "=== Checking KQL content rules ==="
+        python3 << 'PYEOF'
+        import sys, pathlib
+
+        errors = []
+
+        for f in pathlib.Path('kql').glob('*.kql'):
+            name = f.stem
+            content = f.read_text()
+
+            if 'Config' in name and 'datatable' not in content:
+                errors.append(str(f) + ': Config function must contain datatable()')
+
+            downstream = ('AWSGuardDuty_Network', 'AWSGuardDuty_IAM',
+                          'AWSGuardDuty_S3', 'AWSGuardDuty_EKS',
+                          'AWSGuardDuty_ASIMNetworkSession', 'AWSGuardDuty_Schema')
+            if name in downstream:
+                if 'AWSGuardDuty_Config' not in content and 'AWSGuardDuty_Main' not in content:
+                    errors.append(str(f) + ': must reference AWSGuardDuty_Config or AWSGuardDuty_Main')
+
+            if 'let ' not in content:
+                errors.append(str(f) + ': no let binding found')
+
+            print('PASS: ' + str(f))
+
+        for e in errors:
+            print(e, file=sys.stderr)
+        sys.exit(len(errors))
+        PYEOF
+
+    # ── ARM template structural checks ────────────────────────────────────────
+    - name: Check ARM template parameters
+      run: |
+        echo "=== Checking ARM template parameters ==="
+        python3 -c "
+        import json, sys
+        tmpl = json.loads(open('deployment/azuredeploy.json').read())
+        params = tmpl.get('parameters', {})
+        required = ['workspaceName', 'guardDutyTableName', 'rawDataColumn', 'defaultLookback']
+        errors = []
+        for p in required:
+            if p in params:
+                print('PASS: parameter ' + p)
+            else:
+                errors.append('FAIL: missing parameter ' + p)
+        for e in errors:
+            print(e, file=sys.stderr)
+        sys.exit(len(errors))
+        "
+
+    - name: Check ARM template deploys all parsers
+      run: |
+        echo "=== Checking ARM template deploys all parsers ==="
+        python3 -c "
+        import json, sys
+        tmpl = json.loads(open('deployment/azuredeploy.json').read())
+        deployed = set(tmpl.get('outputs', {}).get('deployedFunctions', {}).get('value', []))
+        required = {
+            'AWSGuardDuty_Config', 'AWSGuardDuty_Main', 'AWSGuardDuty_Network',
+            'AWSGuardDuty_IAM', 'AWSGuardDuty_S3', 'AWSGuardDuty_EKS',
+            'AWSGuardDuty_ASIMNetworkSession', 'AWSGuardDuty_Schema'
+        }
+        missing = required - deployed
+        for fn in sorted(deployed):
+            print('PASS: ' + fn + ' in deployedFunctions')
+        for fn in sorted(missing):
+            print('FAIL: ' + fn + ' missing from deployedFunctions', file=sys.stderr)
+        sys.exit(len(missing))
+        "
+
+    # ── Sample data content checks ─────────────────────────────────────────────
+    - name: Check sample data coverage
+      run: |
+        echo "=== Checking sample data finding type coverage ==="
+        python3 << 'PYEOF'
+        import json, sys
+
+        categories = {
+            'network': lambda d: 'NETWORK_CONNECTION' in json.dumps(d),
+            'iam_api': lambda d: 'AWS_API_CALL' in json.dumps(d),
+            's3':      lambda d: 's3BucketDetails' in json.dumps(d),
+            'eks':     lambda d: 'Kubernetes' in json.dumps(d) or 'EKSCluster' in json.dumps(d),
+        }
+
+        found = {k: False for k in categories}
+        with open('sample-data/guardduty_findings.jsonl') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                    detail = obj.get('detail', obj)
+                    for cat, check in categories.items():
+                        if check(detail):
+                            found[cat] = True
+                except json.JSONDecodeError:
+                    pass
+
+        for cat, ok in found.items():
+            status = 'PASS' if ok else 'WARN'
+            print(f'{status}: sample data {"contains" if ok else "missing"} {cat} finding')
+        PYEOF
+
     - name: Summary
       run: |
-        echo "All validation checks passed!"
-        echo "PASS: ARM template structure is valid"
-        echo "PASS: JSON files have valid syntax"
-        echo "PASS: KQL functions exist and have basic syntax validation"
-        echo "PASS: Sample data is valid JSON"
-        echo "PASS: Documentation is complete"
-        echo "PASS: Deployment parameters are configured"
+        echo "================================================================"
+        echo "All required validation checks passed."
+        KQL_COUNT=$(ls kql/*.kql 2>/dev/null | wc -l)
+        SAMPLE_COUNT=$(grep -c . sample-data/guardduty_findings.jsonl 2>/dev/null || echo 0)
+        echo "KQL parser files: $KQL_COUNT"
+        echo "Sample findings:  $SAMPLE_COUNT"
+        echo "================================================================"

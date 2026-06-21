@@ -1,33 +1,84 @@
 // AWSGuardDuty_Network
 // Network-focused parser for GuardDuty findings
-// Extracts network connection details and remote IP information
+// Extracts network connection details with enhanced coverage and geographic enrichment
 let AWSGuardDuty_Network = (lookback: timespan = timespan(null)) {
-    AWSGuardDuty_Main(lookback)
-    | where ActionType == "NETWORK_CONNECTION" or FindingType has_any("DNS", "Network", "Backdoor", "Trojan")
+    let config = AWSGuardDuty_Config();
+    let _enableGeoEnrichment = tobool(toscalar(config | where Setting == "EnableGeoEnrichment" | project Value));
     //
-    // Extract network connection details
+    AWSGuardDuty_Main(lookback)
+    // Enhanced filtering for network-related findings
+    | where ActionType == "NETWORK_CONNECTION" 
+        or FindingType has_any("DNS", "Network", "Backdoor", "Trojan", "DDoS", "Port", "Tor", "Cryptocurrency", "Malware")
+        or FindingType contains "EC2/"
+        or FindingType contains "Behavior:"
+    //
+    // Extract network connection details with error handling
     | extend
         ConnectionDirection = tostring(gd.service.action.networkConnectionAction.connectionDirection),
         Protocol = tostring(gd.service.action.networkConnectionAction.protocol),
+        IsBlocked = tobool(gd.service.action.networkConnectionAction.blocked),
+        //
+        // Local port details
         LocalPort = toint(gd.service.action.networkConnectionAction.localPortDetails.port),
         LocalPortName = tostring(gd.service.action.networkConnectionAction.localPortDetails.portName),
+        //
+        // Remote IP and port details
         RemoteIp = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.ipAddressV4),
+        RemoteIpV6 = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.ipAddressV6),
         RemotePort = toint(gd.service.action.networkConnectionAction.remotePortDetails.port),
         RemotePortName = tostring(gd.service.action.networkConnectionAction.remotePortDetails.portName),
+        //
+        // Geographic information from GuardDuty
         RemoteCountry = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.country.countryName),
         RemoteCountryCode = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.country.countryCode),
         RemoteCity = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.city.cityName),
+        //
+        // Organization details
         RemoteOrganization = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.organization.org),
-        RemoteIsp = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.organization.isp)
+        RemoteIsp = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.organization.isp),
+        RemoteAsn = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.organization.asn),
+        RemoteAsnOrg = tostring(gd.service.action.networkConnectionAction.remoteIpDetails.organization.asnOrg),
+        //
+        // Geolocation coordinates
+        RemoteLatitude = todouble(gd.service.action.networkConnectionAction.remoteIpDetails.geoLocation.lat),
+        RemoteLongitude = todouble(gd.service.action.networkConnectionAction.remoteIpDetails.geoLocation.lon)
     //
-    // Extract instance context
+    // Extract instance context with enhanced details
     | extend
         InstanceId = tostring(gd.resource.instanceDetails.instanceId),
         InstanceType = tostring(gd.resource.instanceDetails.instanceType),
+        InstanceState = tostring(gd.resource.instanceDetails.instanceState),
+        Platform = tostring(gd.resource.instanceDetails.platform),
+        LaunchTime = todatetime(gd.resource.instanceDetails.launchTime),
+        AvailabilityZone = tostring(gd.resource.instanceDetails.availabilityZone),
+        ImageId = tostring(gd.resource.instanceDetails.imageId),
+        ImageDescription = tostring(gd.resource.instanceDetails.imageDescription),
+        //
+        // Network interface details (first interface)
+        NetworkInterfaceId = tostring(gd.resource.instanceDetails.networkInterfaces[0].networkInterfaceId),
         VpcId = tostring(gd.resource.instanceDetails.networkInterfaces[0].vpcId),
         SubnetId = tostring(gd.resource.instanceDetails.networkInterfaces[0].subnetId),
         PrivateIp = tostring(gd.resource.instanceDetails.networkInterfaces[0].privateIpAddress),
-        PublicIp = tostring(gd.resource.instanceDetails.networkInterfaces[0].publicIp)
+        PrivateDnsName = tostring(gd.resource.instanceDetails.networkInterfaces[0].privateDnsName),
+        PublicIp = tostring(gd.resource.instanceDetails.networkInterfaces[0].publicIp),
+        PublicDnsName = tostring(gd.resource.instanceDetails.networkInterfaces[0].publicDnsName),
+        //
+        // Security group information
+        SecurityGroups = gd.resource.instanceDetails.networkInterfaces[0].securityGroups,
+        SecurityGroupIds = tostring(array_strcat(extract_all(@'"groupId":"([^"]+)"', gd.resource.instanceDetails.networkInterfaces[0].securityGroups), ","))
+    //
+    // Enhanced geographic enrichment using Sentinel functions
+    | extend EnrichedGeoInfo = iff(
+        _enableGeoEnrichment and isnotempty(RemoteIp),
+        geo_info_from_ip_address(RemoteIp),
+        dynamic({})
+    )
+    | extend
+        EnrichedCountry = iff(_enableGeoEnrichment, tostring(EnrichedGeoInfo.country), ""),
+        EnrichedState = iff(_enableGeoEnrichment, tostring(EnrichedGeoInfo.state), ""),
+        EnrichedCity = iff(_enableGeoEnrichment, tostring(EnrichedGeoInfo.city), ""),
+        EnrichedLatitude = iff(_enableGeoEnrichment, todouble(EnrichedGeoInfo.latitude), double(null)),
+        EnrichedLongitude = iff(_enableGeoEnrichment, todouble(EnrichedGeoInfo.longitude), double(null))
     //
     // Determine traffic direction for ASIM compatibility
     | extend TrafficDirection = case(
@@ -36,38 +87,99 @@ let AWSGuardDuty_Network = (lookback: timespan = timespan(null)) {
         "Unknown"
     )
     //
-    // Project network-specific fields
+    // Categorize network threats
+    | extend ThreatCategory = case(
+        FindingType has "Backdoor", "Backdoor",
+        FindingType has "Trojan", "Trojan",
+        FindingType has "DDoS" or FindingType has "DenialOfService", "DDoS",
+        FindingType has "Tor", "Anonymization",
+        FindingType has "Cryptocurrency", "Cryptocurrency Mining",
+        FindingType has "DNS", "DNS Abuse",
+        FindingType has "Port", "Port Scanning",
+        "Network Anomaly"
+    )
+    //
+    // Calculate risk score based on multiple factors
+    | extend NetworkRiskScore = 
+        iff(SeverityLevel == "Critical", 40, 0) +
+        iff(SeverityLevel == "High", 30, 0) +
+        iff(SeverityLevel == "Medium", 20, 0) +
+        iff(SeverityLevel == "Low", 10, 0) +
+        iff(ThreatCategory in ("Backdoor", "Trojan"), 20, 0) +
+        iff(RemoteCountry != "United States" and isnotempty(RemoteCountry), 10, 0) +
+        iff(IsBlocked == false, 10, 0)
+    //
+    // Project network-specific fields with enhanced schema
     | project 
+        // Core timestamps and identifiers
         TimeGenerated,
         EventTime,
         FindingId,
         FindingType,
+        ThreatCategory,
         Severity,
         SeverityLevel,
+        NetworkRiskScore,
         Title,
+        Description,
         AwsAccountId,
         AwsRegion,
-        // Network details
+        //
+        // Network connection details
         ConnectionDirection,
         TrafficDirection,
         Protocol,
+        IsBlocked,
         LocalPort,
         LocalPortName,
         RemoteIp,
+        RemoteIpV6,
         RemotePort,
         RemotePortName,
+        //
+        // Geographic information (GuardDuty native)
         RemoteCountry,
         RemoteCountryCode,
         RemoteCity,
+        RemoteLatitude,
+        RemoteLongitude,
+        //
+        // Geographic information (Sentinel enriched)
+        EnrichedCountry,
+        EnrichedState,
+        EnrichedCity,
+        EnrichedLatitude,
+        EnrichedLongitude,
+        //
+        // Organization details
         RemoteOrganization,
         RemoteIsp,
-        // Instance context
+        RemoteAsn,
+        RemoteAsnOrg,
+        //
+        // AWS instance context
         InstanceId,
         InstanceType,
+        InstanceState,
+        Platform,
+        LaunchTime,
+        AvailabilityZone,
+        ImageId,
+        ImageDescription,
+        //
+        // Network infrastructure
+        NetworkInterfaceId,
         VpcId,
         SubnetId,
         PrivateIp,
+        PrivateDnsName,
         PublicIp,
+        PublicDnsName,
+        SecurityGroupIds,
+        //
+        // Metadata
+        ParserVersion,
+        RecordSource = "AWSGuardDuty_Network",
         RawJson
 };
 AWSGuardDuty_Network

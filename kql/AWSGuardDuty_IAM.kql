@@ -1,52 +1,155 @@
 // AWSGuardDuty_IAM
-// IAM-focused parser for GuardDuty findings
-// Extracts API call details and identity context
+// Enhanced IAM-focused parser for GuardDuty findings
+// Extracts API call details, identity context, and authentication information
 let AWSGuardDuty_IAM = (lookback: timespan = timespan(null)) {
     AWSGuardDuty_Main(lookback)
-    | where ActionType == "AWS_API_CALL" or FindingType has_any("IAM", "Stealth", "Policy", "Credential", "UnauthorizedAPI")
+    | where ActionType == "AWS_API_CALL" or FindingType has_any("IAM", "Stealth", "Policy", "Credential", "UnauthorizedAPI", "Persistence", "PrivilegeEscalation")
     //
-    // Extract API call details
+    // Extract comprehensive API call details with error handling
     | extend
-        ApiName = tostring(gd.service.action.awsApiCallAction.api),
-        ServiceName_API = tostring(gd.service.action.awsApiCallAction.serviceName),
-        CallerType = tostring(gd.service.action.awsApiCallAction.callerType),
+        ApiName = coalesce(
+            tostring(gd.service.action.awsApiCallAction.api),
+            tostring(gd.service.action.dnsRequestAction.domain),
+            "Unknown"
+        ),
+        ServiceName_API = coalesce(
+            tostring(gd.service.action.awsApiCallAction.serviceName),
+            extract(@"^([^\.]+)", 1, tostring(gd.service.action.awsApiCallAction.api)),
+            "Unknown"
+        ),
+        CallerType = coalesce(
+            tostring(gd.service.action.awsApiCallAction.callerType),
+            "Unknown"
+        ),
         ErrorCode = tostring(gd.service.action.awsApiCallAction.errorCode),
-        UserAgent = tostring(gd.service.action.awsApiCallAction.userAgent),
-        RemoteIp_API = tostring(gd.service.action.awsApiCallAction.remoteIpDetails.ipAddressV4),
-        RemoteCountry_API = tostring(gd.service.action.awsApiCallAction.remoteIpDetails.country.countryName),
-        RemoteCity_API = tostring(gd.service.action.awsApiCallAction.remoteIpDetails.city.cityName),
-        RemoteOrganization_API = tostring(gd.service.action.awsApiCallAction.remoteIpDetails.organization.org)
+        UserAgent = coalesce(
+            tostring(gd.service.action.awsApiCallAction.userAgent),
+            "Unknown"
+        ),
+        // Enhanced remote IP extraction with fallbacks
+        RemoteIp_API = coalesce(
+            tostring(gd.service.action.awsApiCallAction.remoteIpDetails.ipAddressV4),
+            tostring(gd.service.remoteIpDetails.ipAddressV4),
+            tostring(gd.service.action.networkConnectionAction.remoteIpDetails.ipAddressV4)
+        ),
+        RemoteCountry_API = coalesce(
+            tostring(gd.service.action.awsApiCallAction.remoteIpDetails.country.countryName),
+            tostring(gd.service.remoteIpDetails.country.countryName)
+        ),
+        RemoteCity_API = coalesce(
+            tostring(gd.service.action.awsApiCallAction.remoteIpDetails.city.cityName),
+            tostring(gd.service.remoteIpDetails.city.cityName)
+        ),
+        RemoteOrganization_API = coalesce(
+            tostring(gd.service.action.awsApiCallAction.remoteIpDetails.organization.org),
+            tostring(gd.service.remoteIpDetails.organization.org)
+        ),
+        RemoteIsp_API = coalesce(
+            tostring(gd.service.action.awsApiCallAction.remoteIpDetails.organization.isp),
+            tostring(gd.service.remoteIpDetails.organization.isp)
+        )
     //
-    // Extract identity context
+    // Enhanced identity context extraction
     | extend
-        UserType = tostring(gd.service.action.awsApiCallAction.remoteAccountDetails.accountId),
-        UserName = tostring(gd.service.action.awsApiCallAction.remoteAccountDetails.affiliated),
-        AccessKeyId = tostring(gd.service.action.awsApiCallAction.remoteAccountDetails.accessKeyId),
-        PrincipalId = tostring(gd.service.action.awsApiCallAction.remoteAccountDetails.principalId),
-        SessionName = tostring(gd.service.action.awsApiCallAction.remoteAccountDetails.sessionName)
+        // Account and user information
+        RemoteAccountId = coalesce(
+            tostring(gd.service.action.awsApiCallAction.remoteAccountDetails.accountId),
+            tostring(gd.accountId)
+        ),
+        UserName = coalesce(
+            tostring(gd.service.action.awsApiCallAction.remoteAccountDetails.affiliated),
+            tostring(gd.resource.accessKeyDetails.userName),
+            extract(@"user/([^/]+)", 1, tostring(gd.resource.accessKeyDetails.principalId))
+        ),
+        AccessKeyId = coalesce(
+            tostring(gd.service.action.awsApiCallAction.remoteAccountDetails.accessKeyId),
+            tostring(gd.resource.accessKeyDetails.accessKeyId)
+        ),
+        PrincipalId = coalesce(
+            tostring(gd.service.action.awsApiCallAction.remoteAccountDetails.principalId),
+            tostring(gd.resource.accessKeyDetails.principalId)
+        ),
+        SessionName = tostring(gd.service.action.awsApiCallAction.remoteAccountDetails.sessionName),
+        // Enhanced user type classification
+        UserType = case(
+            tostring(gd.resource.accessKeyDetails.userType) == "IAMUser", "IAM User",
+            tostring(gd.resource.accessKeyDetails.userType) == "Root", "Root Account",
+            tostring(gd.resource.accessKeyDetails.userType) == "AssumedRole", "Assumed Role",
+            isnotempty(tostring(gd.service.action.awsApiCallAction.remoteAccountDetails.sessionName)), "Assumed Role",
+            isnotempty(tostring(gd.resource.accessKeyDetails.accessKeyId)), "IAM User",
+            "Unknown"
+        )
     //
-    // Extract resource context for IAM findings
+    // Enhanced resource context extraction
     | extend
-        ResourceArn = tostring(gd.resource.accessKeyDetails.accessKeyId),
+        ResourceArn = coalesce(
+            tostring(gd.resource.resourceArn),
+            tostring(gd.resource.accessKeyDetails.accessKeyId)
+        ),
         ResourceUserName = tostring(gd.resource.accessKeyDetails.userName),
-        ResourceUserType = tostring(gd.resource.accessKeyDetails.userType)
+        ResourceUserType = tostring(gd.resource.accessKeyDetails.userType),
+        ResourceInstanceId = tostring(gd.resource.instanceDetails.instanceId),
+        ResourceInstanceType = tostring(gd.resource.instanceDetails.instanceType)
     //
-    // Determine action result
+    // Enhanced action result determination
     | extend ActionResult = case(
-        isnotempty(ErrorCode), "Failure",
-        "Success"
+        isnotempty(ErrorCode) and ErrorCode != "Success", "Failure",
+        ErrorCode == "Success", "Success",
+        FindingType has "Unauthorized", "Failure",
+        FindingType has "Stealth", "Success", // Stealth activities are typically successful
+        isnotempty(ApiName), "Success",
+        "Unknown"
     )
     //
-    // Categorize finding types
+    // Enhanced finding categorization with threat intelligence
     | extend FindingCategory = case(
-        FindingType has "Stealth", "Stealth",
-        FindingType has "Policy", "Policy Violation", 
-        FindingType has "Credential", "Credential Compromise",
-        FindingType has "UnauthorizedAPI", "Unauthorized Access",
+        FindingType has_any("Stealth", "StealthyBehavior"), "Stealth Activity",
+        FindingType has_any("Policy", "PolicyViolation"), "Policy Violation",
+        FindingType has_any("Credential", "CredentialAccess"), "Credential Compromise",
+        FindingType has_any("UnauthorizedAPI", "Unauthorized"), "Unauthorized Access",
+        FindingType has_any("Persistence", "PersistentThreat"), "Persistence",
+        FindingType has_any("PrivilegeEscalation", "Escalation"), "Privilege Escalation",
+        FindingType has_any("Reconnaissance", "Recon"), "Reconnaissance",
+        FindingType has_any("Discovery", "Enum"), "Discovery",
         "IAM Activity"
+    ),
+    // Risk scoring based on finding characteristics
+    RiskScore = case(
+        SeverityLevel == "High" and ActionResult == "Success", 90,
+        SeverityLevel == "High" and ActionResult == "Failure", 70,
+        SeverityLevel == "Medium" and ActionResult == "Success", 60,
+        SeverityLevel == "Medium" and ActionResult == "Failure", 40,
+        SeverityLevel == "Low", 20,
+        10
+    ),
+    // Authentication method inference
+    AuthenticationMethod = case(
+        isnotempty(SessionName), "Assumed Role",
+        isnotempty(AccessKeyId) and UserType == "Root Account", "Root Access Key",
+        isnotempty(AccessKeyId), "Access Key",
+        "Unknown"
+    ),
+    // Threat indicators
+    ThreatIndicators = case(
+        RemoteCountry_API in ("China", "Russia", "North Korea", "Iran"), "High-Risk Geography",
+        RemoteOrganization_API has_any("Tor", "VPN", "Proxy"), "Anonymization Service",
+        UserAgent has_any("curl", "wget", "python", "boto"), "Programmatic Access",
+        ApiName has_any("CreateUser", "AttachUserPolicy", "CreateRole"), "Privilege Operations",
+        ""
     )
     //
-    // Project IAM-specific fields
+    // Data quality validation
+    | extend DataQuality = case(
+        isempty(FindingId), "Missing FindingId",
+        isempty(ApiName) and ActionType == "AWS_API_CALL", "Missing API Name",
+        isempty(RemoteIp_API) and ActionType == "AWS_API_CALL", "Missing Remote IP",
+        "Good"
+    )
+    //
+    // Filter out low-quality records if specified
+    | where DataQuality == "Good" or isempty(DataQuality)
+    //
+    // Project comprehensive IAM-specific fields
     | project 
         TimeGenerated,
         EventTime,
@@ -55,6 +158,7 @@ let AWSGuardDuty_IAM = (lookback: timespan = timespan(null)) {
         FindingCategory,
         Severity,
         SeverityLevel,
+        RiskScore,
         Title,
         Description,
         AwsAccountId,
@@ -66,21 +170,29 @@ let AWSGuardDuty_IAM = (lookback: timespan = timespan(null)) {
         ActionResult,
         ErrorCode,
         UserAgent,
-        // Identity context
-        UserType,
+        // Enhanced identity context
+        RemoteAccountId,
         UserName,
+        UserType,
         AccessKeyId,
         PrincipalId,
         SessionName,
+        AuthenticationMethod,
         // Resource context
         ResourceArn,
         ResourceUserName,
         ResourceUserType,
+        ResourceInstanceId,
+        ResourceInstanceType,
         // Network context
         RemoteIp_API,
         RemoteCountry_API,
         RemoteCity_API,
         RemoteOrganization_API,
+        RemoteIsp_API,
+        // Threat intelligence
+        ThreatIndicators,
+        DataQuality,
         RawJson
 };
 AWSGuardDuty_IAM

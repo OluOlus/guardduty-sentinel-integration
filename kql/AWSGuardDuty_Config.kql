@@ -1,22 +1,44 @@
 // AWSGuardDuty_Config
-// Configuration function for GuardDuty parsers
-// This function centralizes table names and settings for all GuardDuty parsers
+// Centralised configuration for all GuardDuty parsers.
+// Change settings here once; all downstream parsers read these values.
 let AWSGuardDuty_Config = () {
     datatable(
         Setting: string,
-        Value: string
+        Value: string,
+        Description: string,
+        DefaultValue: string
     )[
-        // Table where GuardDuty data lands via AWS S3 connector
-        "TableName", "AWSGuardDuty",
-        
-        // Raw JSON column name (if available)
-        "RawColumn", "EventData",
-        
-        // Default lookback period for queries
-        "DefaultLookback", "7d",
-        
-        // Parser version for tracking
-        "ParserVersion", "1.0.0"
+        // Core table configuration
+        "TableName",             "AWSGuardDuty",              "Primary table where GuardDuty data lands via AWS S3 connector",    "AWSGuardDuty",
+        "RawColumn",             "EventData",                 "Column containing raw GuardDuty JSON data",                        "EventData",
+        "AlternateRawColumn",    "Message",                   "Fallback column when primary raw column is empty",                 "Message",
+
+        // Time and performance settings
+        "DefaultLookback",       "7d",                        "Default time range when no lookback is specified",                 "7d",
+        "MaxLookback",           "90d",                       "Maximum allowed lookback period (guards against expensive queries)","90d",
+        "QueryTimeout",          "300",                       "Query timeout in seconds",                                         "300",
+
+        // Data quality thresholds
+        "MinSeverityScore",      "0.0",                       "Minimum severity score to retain (0 = keep all)",                  "0.0",
+        "MaxSeverityScore",      "10.0",                      "Maximum expected severity score",                                  "10.0",
+        "RequiredFields",        "id,type,severity,accountId,region", "Required fields for a valid finding",                      "id,type,severity,accountId,region",
+
+        // Input format handling
+        // GuardDuty findings arrive in two formats:
+        //   Direct  — the raw object IS the finding (schemaVersion at root level)
+        //   EventBridge — the finding is wrapped under a "detail" key
+        "HandleEventBridgeEnvelope", "true",                  "Auto-detect and unwrap EventBridge envelope format",               "true",
+
+        // Parser metadata
+        "ParserVersion",         "1.2.0",                     "Current parser package version",                                   "1.2.0",
+        "SchemaVersion",         "2.0",                       "Expected GuardDuty schemaVersion prefix",                          "2.0",
+        "LastUpdated",           "2026-06-21",                "Date of last parser update",                                       "2026-06-21",
+
+        // Feature flags
+        "EnableGeoEnrichment",      "true",  "Use geo_info_from_ip_address() to enrich remote IPs",            "true",
+        "EnableASIMNormalization",  "true",  "Enable ASIM schema normalization in ASIMNetworkSession parser",   "true",
+        "EnableDataValidation",     "true",  "Filter records that fail required-field validation",              "true",
+        "EnablePerformanceLogging", "false", "Emit per-query performance metadata (diagnostic use only)",       "false"
     ]
 };
 AWSGuardDuty_Config
