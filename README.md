@@ -32,8 +32,8 @@ See [Connector Setup Guide](docs/connector-setup.md) for detailed steps.
 
 ```bash
 # Clone repository
-git clone https://github.com/your-org/guardduty-sentinel-integration
-cd guardduty-sentinel-integration
+git clone https://github.com/OluOlus/guardduty-sentinel-integration.
+cd guardduty-sentinel-integration.
 
 # Deploy using Azure CLI
 az deployment group create \
@@ -69,13 +69,16 @@ AWS GuardDuty → S3 Export → Microsoft Sentinel AWS S3 Connector → AWSGuard
 
 ### Core Functions
 
-| Function | Purpose | Example |
+| Function | Purpose | Key Fields |
 |----------|---------|---------|
-| `AWSGuardDuty_Config()` | Centralized configuration | Table names, default lookback |
-| `AWSGuardDuty_Main(lookback)` | Primary parser | All findings with core fields |
-| `AWSGuardDuty_Network(lookback)` | Network-focused findings | Remote IPs, ports, protocols |
-| `AWSGuardDuty_IAM(lookback)` | Identity findings | API calls, users, access keys |
-| `AWSGuardDuty_ASIMNetworkSession(lookback)` | ASIM normalization | Cross-source network hunting |
+| `AWSGuardDuty_Config()` | Centralised configuration | Table names, lookback, feature flags |
+| `AWSGuardDuty_Main(lookback)` | Base parser — all findings | FindingId, Severity, AwsAccountId, gd |
+| `AWSGuardDuty_Network(lookback)` | Network findings | RemoteIp, Protocol, VpcId, ThreatCategory |
+| `AWSGuardDuty_IAM(lookback)` | IAM/API call findings | ApiName, UserName, AccessKeyId, RiskScore |
+| `AWSGuardDuty_S3(lookback)` | S3 bucket findings | BucketName, EffectivePermission, EncryptionType |
+| `AWSGuardDuty_EKS(lookback)` | EKS/Kubernetes findings | K8sNamespace, K8sUserName, K8sThreatCategory |
+| `AWSGuardDuty_ASIMNetworkSession(lookback)` | ASIM network session normalization | SrcIpAddr, DstIpAddr, ThreatRiskLevel |
+| `AWSGuardDuty_Schema(lookback)` | Data quality validation | OverallQualityScore, QualityCategory |
 
 ### Usage Examples
 
@@ -90,6 +93,16 @@ AWSGuardDuty_Network(7d)
 | where isnotempty(RemoteIp)
 | summarize Findings = count() by RemoteCountry, FindingType
 | order by Findings desc
+
+// S3 public exposure findings
+AWSGuardDuty_S3(7d)
+| where IsPubliclyExposed == true or S3RiskCategory == "Encryption Disabled"
+| project EventTime, BucketName, S3RiskCategory, EffectivePermission, EncryptionType, AwsAccountId
+
+// EKS privilege escalation and suspicious workloads
+AWSGuardDuty_EKS(7d)
+| where K8sThreatCategory in ("Privilege Escalation", "Credential Access")
+| project EventTime, ClusterName, K8sNamespace, K8sObjectName, K8sIsPrivileged, K8sRiskScore
 
 // ASIM-compliant network sessions for cross-source hunting
 AWSGuardDuty_ASIMNetworkSession(1d)
@@ -165,10 +178,13 @@ See [Troubleshooting Guide](docs/troubleshooting.md) for complete solutions.
 guardduty-sentinel-integration/
 ├── kql/                          # KQL parsing functions
 │   ├── AWSGuardDuty_Config.kql
-│   ├── AWSGuardDuty_Main.kql
+│   ├── AWSGuardDuty_Main.kql          # handles both direct & EventBridge envelope formats
 │   ├── AWSGuardDuty_Network.kql
 │   ├── AWSGuardDuty_IAM.kql
-│   └── AWSGuardDuty_ASIMNetworkSession.kql
+│   ├── AWSGuardDuty_S3.kql            # S3 bucket findings
+│   ├── AWSGuardDuty_EKS.kql           # EKS/Kubernetes findings
+│   ├── AWSGuardDuty_ASIMNetworkSession.kql
+│   └── AWSGuardDuty_Schema.kql        # data quality validation
 ├── deployment/                   # ARM/Bicep templates
 │   ├── azuredeploy.json
 │   └── deploy.bicep
@@ -197,18 +213,20 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 🆘 Support
 
-- **Issues**: [GitHub Issues](https://github.com/your-org/guardduty-sentinel-integration/issues)
+- **Issues**: [GitHub Issues](https://github.com/OluOlus/guardduty-sentinel-integration./issues)
 - **Connector Issues**: Check Microsoft Sentinel documentation
 - **AWS GuardDuty**: Consult AWS documentation
 
 ## Version
 
-Current version: 1.0.0 (Production Ready)
+Current version: **1.2.0**
 
-**What's New in 1.0.0:**
-- Complete redesign to use existing AWS S3 connector
-- Config-driven KQL parsing functions
-- ASIM network session normalization
-- Comprehensive troubleshooting guides
-- One-click ARM template deployment
-- Production-tested with real GuardDuty data
+**What's New in 1.2.0:**
+- Added `AWSGuardDuty_S3` parser — extracts bucket encryption, public access posture, and ACL details
+- Added `AWSGuardDuty_EKS` parser — covers EKS audit log and Runtime Monitoring findings
+- Fixed `AWSGuardDuty_Main` to auto-detect and unwrap EventBridge envelope format
+- Fixed `AWSGuardDuty_ASIMNetworkSession` — removed references to columns that do not exist in upstream schema
+- Updated `AWSGuardDuty_Config` with `HandleEventBridgeEnvelope` flag and `Critical` severity tier
+- ARM template now deploys all 8 parsers
+- CI workflow now validates S3/EKS parsers, sample data coverage, and ARM function list
+- Sample data expanded to 7 findings covering Network, IAM, S3, EKS, and both input formats
