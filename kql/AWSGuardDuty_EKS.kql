@@ -30,20 +30,9 @@ let AWSGuardDuty_EKS = (lookback: timespan = timespan(null)) {
         K8sSourceIp         = tostring(_k8s.sourceIPs[0]),
         K8sUserAgent        = tostring(_k8s.userAgent),
         K8sStatusCode       = toint(_k8s.statusCode),
-        K8sIsAdminCall      = tobool(_k8s.parameters contains "admin")
-    // Kubernetes user context
-    | extend _k8sUser = _k8s.requestUri
-    | extend _k8sUserDetails = gd.service.action.kubernetesApiCallAction.requestUri
+        K8sIsAdminCall      = tobool(tostring(_k8s.parameters) contains "admin")
+    // Kubernetes user context from additionalInfo
     | extend
-        K8sUsername   = tostring(gd.service.action.kubernetesApiCallAction.requestUri),
-        K8sUserGroups = tostring(gd.service.action.kubernetesApiCallAction.userAgent)
-    // Re-extract user details properly from the Kubernetes user context
-    | extend _ku = gd.service.action.kubernetesApiCallAction
-    | extend
-        K8sUsername    = coalesce(
-            tostring(gd.resource.eksClusterDetails.name),
-            tostring(_ku.requestUri)
-        ),
         K8sUserName    = tostring(gd.service.additionalInfo.kubernetesUserName),
         K8sUserGroups  = tostring(gd.service.additionalInfo.kubernetesUserGroups),
         K8sUserType    = case(
@@ -96,7 +85,7 @@ let AWSGuardDuty_EKS = (lookback: timespan = timespan(null)) {
         iff(K8sIsPrivileged == true,        20, 0) +
         iff(K8sThreatCategory in ("Privilege Escalation", "Credential Access"), 15, 0) +
         iff(K8sUserType == "ServiceAccount" and K8sThreatCategory != "Discovery", 10, 0)
-    | project-away _k8s, _k8sUser, _k8sUserDetails, _ku, _rt
+    | project-away _k8s, _rt
     | project
         // Core identifiers
         TimeGenerated,

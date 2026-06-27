@@ -117,28 +117,40 @@ jobs:
     - name: KQL bracket balance check
       run: |
         echo "=== Checking KQL bracket balance ==="
-        python3 -c "
+        python3 << 'PYEOF'
         import sys, pathlib
         errors = []
         for f in pathlib.Path('kql').glob('*.kql'):
             content = f.read_text()
             stack = []
             pairs = {'(': ')', '[': ']', '{': '}'}
-            in_str = False
-            for ch in content:
-                if ch == '\"' and not in_str:
-                    in_str = True
-                elif ch == '\"' and in_str:
-                    in_str = False
-                elif in_str:
+            in_dbl = False   # inside double-quoted string
+            in_sgl = False   # inside single-quoted string (includes @'...' raw strings)
+            i = 0
+            while i < len(content):
+                ch = content[i]
+                # Skip single-line comments
+                if not in_dbl and not in_sgl and ch == '/' and i + 1 < len(content) and content[i+1] == '/':
+                    while i < len(content) and content[i] != '\n':
+                        i += 1
                     continue
-                elif ch in pairs:
-                    stack.append(ch)
-                elif ch in pairs.values():
-                    if not stack or pairs.get(stack[-1]) != ch:
-                        errors.append(str(f) + ': mismatched bracket')
-                        break
-                    stack.pop()
+                if ch == '"' and not in_dbl and not in_sgl:
+                    in_dbl = True
+                elif ch == '"' and in_dbl:
+                    in_dbl = False
+                elif ch == "'" and not in_dbl and not in_sgl:
+                    in_sgl = True
+                elif ch == "'" and in_sgl:
+                    in_sgl = False
+                elif not in_dbl and not in_sgl:
+                    if ch in pairs:
+                        stack.append(ch)
+                    elif ch in pairs.values():
+                        if not stack or pairs.get(stack[-1]) != ch:
+                            errors.append(str(f) + ': mismatched bracket near char ' + str(i))
+                            break
+                        stack.pop()
+                i += 1
             if stack:
                 errors.append(str(f) + ': unclosed brackets ' + str(stack))
             else:
@@ -146,7 +158,7 @@ jobs:
         for e in errors:
             print(e, file=sys.stderr)
         sys.exit(len(errors))
-        "
+        PYEOF
 
     - name: KQL content rules check
       run: |
