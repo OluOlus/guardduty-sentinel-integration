@@ -179,8 +179,13 @@ jobs:
                           'AWSGuardDuty_S3', 'AWSGuardDuty_EKS',
                           'AWSGuardDuty_ASIMNetworkSession', 'AWSGuardDuty_Schema')
             if name in downstream:
-                if 'AWSGuardDuty_Config' not in content and 'AWSGuardDuty_Main' not in content:
-                    errors.append(str(f) + ': must reference AWSGuardDuty_Config or AWSGuardDuty_Main')
+                has_upstream = (
+                    'AWSGuardDuty_Config' in content
+                    or 'AWSGuardDuty_Main' in content
+                    or 'AWSGuardDuty_Network' in content
+                )
+                if not has_upstream:
+                    errors.append(str(f) + ': must reference AWSGuardDuty_Config, AWSGuardDuty_Main, or AWSGuardDuty_Network')
 
             if 'let ' not in content:
                 errors.append(str(f) + ': no let binding found')
