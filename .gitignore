@@ -48,4 +48,8 @@ logs/
 
 # Backup files
 *.bak
-*.backuprequirements.md
+*.backup
+requirements.md
+
+# Sample data (kept locally, not in remote)
+sample-data/
