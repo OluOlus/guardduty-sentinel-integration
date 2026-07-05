@@ -1,6 +1,6 @@
-# GuardDuty Sentinel Integration
+# GuardDuty → Sentinel Integration
 
-A production-ready KQL parsing and normalization layer for AWS GuardDuty findings in Microsoft Sentinel. This solution works with the existing Microsoft Sentinel AWS S3 connector - no custom ingestion infrastructure required.
+Production-ready ingestion and KQL parsing layer for AWS GuardDuty findings in Microsoft Sentinel. Supports two ingestion paths: the native AWS S3 connector (polling) and a direct Lambda push via the Log Analytics Data Collector API.
 
 ## What This Solves
 
@@ -9,8 +9,9 @@ A production-ready KQL parsing and normalization layer for AWS GuardDuty finding
 - Raw GuardDuty data is hard to query and correlate
 - No ASIM normalization for cross-source hunting
 - Lack of operational validation and troubleshooting tools
+- No real-time push option for time-sensitive findings
 
-**The Solution**: A complete KQL parsing package that makes GuardDuty data immediately queryable and ASIM-aligned once ingested.
+**The Solution**: A complete ingestion and parsing package — config-driven KQL functions that make GuardDuty data immediately queryable and ASIM-aligned, plus an optional Lambda handler for real-time EventBridge→Sentinel streaming.
 
 ## Quick Start
 
@@ -32,10 +33,13 @@ See [Connector Setup Guide](docs/connector-setup.md) for detailed steps.
 
 ```bash
 # Clone repository
-git clone https://github.com/OluOlus/guardduty-sentinel-integration.
-cd guardduty-sentinel-integration.
+git clone https://github.com/OluOlus/guardduty-sentinel-integration
+cd guardduty-sentinel-integration
 
-# Deploy using Azure CLI
+# Option A: One-command deploy script
+./deploy.sh -g your-resource-group -w your-sentinel-workspace
+
+# Option B: Azure CLI directly
 az deployment group create \
   --resource-group your-resource-group \
   --template-file deployment/azuredeploy.json \
@@ -53,17 +57,34 @@ AWSGuardDuty_Main(1d) | take 10
 ## Architecture
 
 ```
-AWS GuardDuty → S3 Export → Microsoft Sentinel AWS S3 Connector → AWSGuardDuty Table
-                                                                         ↓
-                                    KQL Parsing Functions → ASIM Normalization
+                    ┌─────────────────────────────────────────────────────────┐
+                    │                    INGESTION PATHS                       │
+                    ├─────────────────────────────────────────────────────────┤
+                    │                                                         │
+ AWS GuardDuty ─┬──▶ S3 Export → SQS → Sentinel AWS S3 Connector (polling)   │
+                │   │                                                         │
+                └──▶ EventBridge → Lambda → Log Analytics API (real-time)     │
+                    │                                                         │
+                    └──────────────────────────┬──────────────────────────────┘
+                                               │
+                                               ▼
+                                      AWSGuardDuty Table
+                                               │
+                                               ▼
+                              KQL Parsing Functions → ASIM Normalization
 ```
 
+**Path 1 — S3 Connector (default):** Native Microsoft connector polls an SQS queue for S3 object notifications. No custom compute required. ~15-30 min latency.
+
+**Path 2 — Lambda Direct Push (optional):** EventBridge rule triggers a Lambda that transforms and POSTs findings directly to the Log Analytics Data Collector API. Sub-minute latency.
+
 **Key Benefits:**
-- Uses existing, supported Microsoft connector
-- No custom infrastructure to maintain
+- Two ingestion paths: S3 connector (managed) or Lambda (real-time)
+- Uses existing, supported Microsoft connector for the primary path
 - Config-driven parsing (change table names once)
 - ASIM-aligned for cross-source hunting
 - Built-in troubleshooting for common issues (KMS permissions)
+- Handles both direct JSON and EventBridge envelope formats automatically
 
 ## KQL Functions
 
@@ -188,16 +209,48 @@ guardduty-sentinel-integration/
 ├── deployment/                   # ARM/Bicep templates
 │   ├── azuredeploy.json
 │   └── deploy.bicep
+├── scripts/                      # Deployment and ingestion scripts
+│   ├── lambda_ingestion_handler.py    # EventBridge → Sentinel direct push (Lambda)
+│   └── validate-deployment.ps1
 ├── validation/                   # Diagnostic queries
 │   ├── smoke_tests.kql
 │   └── troubleshooting.kql
 ├── sample-data/                  # Test data and queries
 │   ├── guardduty_findings.jsonl
 │   └── test_queries.kql
-└── docs/                        # Comprehensive guides
-    ├── connector-setup.md
-    ├── troubleshooting.md
-    └── kms-permissions.md
+├── docs/                         # Comprehensive guides
+│   ├── connector-setup.md
+│   ├── troubleshooting.md
+│   └── kms-permissions.md
+└── deploy.sh                     # One-command deployment script
+```
+
+## Lambda Direct-Push Handler (Optional)
+
+For real-time ingestion without the S3/SQS polling delay, deploy the Lambda function at `scripts/lambda_ingestion_handler.py`. This function:
+
+- Receives GuardDuty findings from EventBridge
+- Auto-detects and unwraps EventBridge envelope format
+- Transforms nested JSON into a flat, Sentinel-friendly schema
+- Posts to the Log Analytics Data Collector API with HMAC-SHA256 auth
+- Returns structured error responses for each failure mode
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `SENTINEL_WORKSPACE_ID` | Log Analytics workspace ID |
+| `SENTINEL_SHARED_KEY` | Log Analytics primary/secondary key |
+| `LOG_TYPE` | Target table name (default: `AWSGuardDuty`) |
+| `LOG_LEVEL` | Logging verbosity (default: `INFO`) |
+
+### EventBridge Rule
+
+```json
+{
+  "source": ["aws.guardduty"],
+  "detail-type": ["GuardDuty Finding"]
+}
 ```
 
 ## 🤝 Contributing
@@ -219,7 +272,15 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Version
 
-Current version: **1.2.0**
+Current version: **1.3.0**
+
+**What's New in 1.3.0:**
+- Added `scripts/lambda_ingestion_handler.py` — direct EventBridge→Sentinel push via Log Analytics Data Collector API
+- Two ingestion paths: S3 connector (managed, polling) and Lambda (real-time, sub-minute)
+- Lambda handler includes HMAC-SHA256 auth, structured error handling, and automatic envelope detection
+- Updated architecture diagram to reflect both ingestion paths
+- CI workflow fix: ASIM parser upstream reference validation now accepts transitive dependencies
+- Deployed and validated end-to-end with live GuardDuty findings (406 findings, 202 unique types)
 
 **What's New in 1.2.0:**
 - Added `AWSGuardDuty_S3` parser — extracts bucket encryption, public access posture, and ACL details
