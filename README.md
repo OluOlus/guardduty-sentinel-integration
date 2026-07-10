@@ -270,12 +270,6 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 Current version: **1.4.0**
 
-**What's New in 1.4.0:**
-- Removed `sample-data/` from repository (kept locally, gitignored)
-- Removed `requirements.md` from repository (kept locally, gitignored)
-- Smoke tests remain in `validation/smoke_tests.kql` for deployment validation
-- Updated README to reflect current repository structure
-
 **What's New in 1.3.0:**
 - Added `scripts/lambda_ingestion_handler.py` — direct EventBridge→Sentinel push via Log Analytics Data Collector API
 - Two ingestion paths: S3 connector (managed, polling) and Lambda (real-time, sub-minute)
