@@ -165,25 +165,22 @@ az deployment group create \
 
 See [Troubleshooting Guide](docs/troubleshooting.md) for complete solutions.
 
-## � Validation & Testing
+## Validation & Testing
 
 ### Smoke Tests
 ```kql
-// Copy and run queries from validation/smoke_tests.kql
-// Tests data availability, structure, parsing quality
-```
-
-### Sample Queries
-```kql
-// Copy queries from sample-data/test_queries.kql
-// Examples for hunting, analysis, and operational monitoring
+// Run queries from validation/smoke_tests.kql against your Sentinel workspace
+// Tests data availability, structure, and parsing quality
+AWSGuardDuty_Main(1d) | take 10
 ```
 
 ### Expected Results
-- GuardDuty data is available
+- GuardDuty data is available and queryable
 - Data structure is valid  
 - Multiple finding types detected
-- Network and IAM findings parse correctly
+- Network, IAM, S3, and EKS findings parse correctly
+
+> **Note:** Sample data and test queries have been removed from the repository and are kept locally only. Use the smoke tests in `validation/` for deployment validation.
 
 ## Documentation
 
@@ -215,15 +212,14 @@ guardduty-sentinel-integration/
 ├── validation/                   # Diagnostic queries
 │   ├── smoke_tests.kql
 │   └── troubleshooting.kql
-├── sample-data/                  # Test data and queries
-│   ├── guardduty_findings.jsonl
-│   └── test_queries.kql
 ├── docs/                         # Comprehensive guides
 │   ├── connector-setup.md
 │   ├── troubleshooting.md
 │   └── kms-permissions.md
 └── deploy.sh                     # One-command deployment script
 ```
+
+> **Note:** `sample-data/` and `requirements.md` are kept locally only (gitignored) and not included in the repository.
 
 ## Lambda Direct-Push Handler (Optional)
 
@@ -272,7 +268,13 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Version
 
-Current version: **1.3.0**
+Current version: **1.4.0**
+
+**What's New in 1.4.0:**
+- Removed `sample-data/` from repository (kept locally, gitignored)
+- Removed `requirements.md` from repository (kept locally, gitignored)
+- Smoke tests remain in `validation/smoke_tests.kql` for deployment validation
+- Updated README to reflect current repository structure
 
 **What's New in 1.3.0:**
 - Added `scripts/lambda_ingestion_handler.py` — direct EventBridge→Sentinel push via Log Analytics Data Collector API
