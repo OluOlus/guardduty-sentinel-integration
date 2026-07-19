@@ -1,350 +1,345 @@
-# GuardDuty Sentinel Integration - Deployment Runbook
+# Deployment Runbook — GuardDuty → Sentinel Integration
 
-## Overview
-
-This runbook provides step-by-step instructions for deploying the GuardDuty Sentinel Integration solution. The deployment process is designed to be reliable, repeatable, and suitable for both development and production environments.
-
-## Prerequisites
-
-### Required Tools
-- **Azure CLI** (version 2.30.0 or later)
-- **PowerShell** (version 7.0 or later recommended)
-- **Git** for cloning the repository
-
-### Required Permissions
-- **Log Analytics Contributor** role on the target workspace
-- **Reader** role on the resource group containing the workspace
-- Ability to create and modify KQL functions in Microsoft Sentinel
-
-### Environment Requirements
-- **Microsoft Sentinel workspace** with AWS S3 connector configured
-- **AWS GuardDuty** enabled and exporting findings to S3
-- **Network connectivity** to Azure and GitHub
-
-## Pre-Deployment Checklist
-
-### ✅ Verify Prerequisites
-
-1. **Check Azure CLI Authentication**
-   ```bash
-   az account show
-   az account list --query "[].{Name:name, SubscriptionId:id, State:state}"
-   ```
-
-2. **Verify Workspace Access**
-   ```bash
-   az monitor log-analytics workspace show \
-     --workspace-name "your-workspace-name" \
-     --resource-group "your-resource-group"
-   ```
-
-3. **Test KQL Function Creation Permissions**
-   ```bash
-   # This should not return permission errors
-   az monitor log-analytics workspace saved-search list \
-     --workspace-name "your-workspace-name" \
-     --resource-group "your-resource-group"
-   ```
-
-### ✅ Validate AWS S3 Connector
-
-1. **Check Connector Status in Sentinel**
-   - Navigate to Microsoft Sentinel → Data connectors
-   - Find "Amazon Web Services S3" connector
-   - Verify status shows "Connected"
-
-2. **Verify GuardDuty Table Exists**
-   ```kql
-   // Run in Sentinel Logs
-   AWSGuardDuty
-   | getschema
-   ```
-
-3. **Check Recent Data Ingestion**
-   ```kql
-   // Should show recent records
-   AWSGuardDuty
-   | where TimeGenerated >= ago(24h)
-   | take 10
-   ```
-
-## Deployment Process
-
-### Step 1: Clone Repository
-
-```bash
-# Clone the repository
-git clone https://github.com/your-org/guardduty-sentinel-integration
-cd guardduty-sentinel-integration
-
-# Verify file structure
-ls -la kql/
-ls -la deployment/
-```
-
-### Step 2: Configure Environment Parameters
-
-Choose the appropriate parameter file for your environment:
-
-**For Development:**
-```bash
-cp deployment/parameters/dev.parameters.json deployment/parameters/my-dev.parameters.json
-```
-
-**For Production:**
-```bash
-cp deployment/parameters/prod.parameters.json deployment/parameters/my-prod.parameters.json
-```
-
-**Edit the parameter file:**
-```json
-{
-  "parameters": {
-    "workspaceName": {
-      "value": "YOUR_WORKSPACE_NAME"
-    },
-    "guardDutyTableName": {
-      "value": "AWSGuardDuty"  // Verify this matches your table
-    },
-    "rawDataColumn": {
-      "value": "EventData"    // Check with: AWSGuardDuty | getschema
-    },
-    "environment": {
-      "value": "prod"         // or "dev", "test", "staging"
-    }
-  }
-}
-```
-
-### Step 3: Deploy KQL Functions
-
-**Option A: Using Azure CLI (Recommended)**
-```bash
-# Set your subscription
-az account set --subscription "your-subscription-id"
-
-# Deploy to development
-az deployment group create \
-  --resource-group "your-resource-group" \
-  --template-file deployment/deploy.bicep \
-  --parameters @deployment/parameters/my-dev.parameters.json
-
-# Deploy to production
-az deployment group create \
-  --resource-group "your-resource-group" \
-  --template-file deployment/deploy.bicep \
-  --parameters @deployment/parameters/my-prod.parameters.json
-```
-
-**Option B: Using PowerShell**
-```powershell
-# Connect to Azure
-Connect-AzAccount
-
-# Deploy functions
-New-AzResourceGroupDeployment `
-  -ResourceGroupName "your-resource-group" `
-  -TemplateFile "deployment/deploy.bicep" `
-  -TemplateParameterFile "deployment/parameters/my-prod.parameters.json"
-```
-
-### Step 4: Validate Deployment
-
-**Run Automated Validation:**
-```powershell
-# Run validation script
-./scripts/validate-deployment.ps1 `
-  -WorkspaceName "your-workspace-name" `
-  -ResourceGroupName "your-resource-group" `
-  -RunSmokeTests
-```
-
-**Manual Validation Queries:**
-```kql
-// 1. Test configuration function
-AWSGuardDuty_Config()
-
-// 2. Test main parser
-AWSGuardDuty_Main(1d) | take 5
-
-// 3. Test network parser
-AWSGuardDuty_Network(1d) | where isnotempty(RemoteIp) | take 5
-
-// 4. Test IAM parser  
-AWSGuardDuty_IAM(1d) | where isnotempty(ApiName) | take 5
-
-// 5. Test ASIM normalization
-AWSGuardDuty_ASIMNetworkSession(1d) | take 5
-
-// 6. Test schema validation
-AWSGuardDuty_Schema(1d) | summarize count() by QualityCategory
-```
-
-## Post-Deployment Configuration
-
-### Configure Alerting Rules
-
-1. **High Severity Findings Alert**
-   ```kql
-   AWSGuardDuty_Main(5m)
-   | where SeverityLevel == "Critical" or SeverityLevel == "High"
-   | project EventTime, FindingType, Title, AwsAccountId, AwsRegion, Severity
-   ```
-
-2. **Network Threat Detection**
-   ```kql
-   AWSGuardDuty_Network(5m)
-   | where ThreatCategory in ("Backdoor", "Trojan", "DDoS")
-   | project EventTime, FindingType, RemoteIp, RemoteCountry, InstanceId
-   ```
-
-### Create Workbooks
-
-1. **GuardDuty Overview Dashboard**
-   - Finding trends over time
-   - Severity distribution
-   - Top finding types
-   - Geographic threat map
-
-2. **Network Security Dashboard**
-   - Remote IP analysis
-   - Port and protocol usage
-   - Geographic distribution of threats
-   - Instance impact analysis
-
-### Set Up Automated Response
-
-1. **Logic Apps Integration**
-   - Automatic ticket creation for high-severity findings
-   - Slack/Teams notifications
-   - Email alerts to security team
-
-2. **Playbook Automation**
-   - Instance isolation for critical threats
-   - Security group modifications
-   - Automated investigation workflows
-
-## Troubleshooting
-
-### Common Issues
-
-#### Issue 1: Functions Not Deploying
-**Symptoms:** Deployment fails with permission errors
-**Solution:**
-```bash
-# Check permissions
-az role assignment list --assignee $(az account show --query user.name -o tsv) --scope "/subscriptions/your-sub-id/resourceGroups/your-rg"
-
-# Verify workspace access
-az monitor log-analytics workspace show --workspace-name "workspace" --resource-group "rg"
-```
-
-#### Issue 2: No Data in Parsers
-**Symptoms:** Functions deploy but return no results
-**Solution:**
-```kql
-// Check raw table
-AWSGuardDuty | take 10
-
-// Check column names
-AWSGuardDuty | getschema
-
-// Verify configuration
-AWSGuardDuty_Config() | where Setting in ("TableName", "RawColumn")
-```
-
-#### Issue 3: Parsing Errors
-**Symptoms:** Functions return errors or empty results
-**Solution:**
-```kql
-// Test JSON parsing
-AWSGuardDuty
-| extend ParsedJson = parse_json(EventData)
-| where isnotempty(ParsedJson)
-| take 5
-
-// Check data quality
-AWSGuardDuty_Schema(1d)
-| summarize count() by QualityCategory
-```
-
-### Performance Optimization
-
-#### Query Performance
-- Use appropriate time ranges (avoid queries > 30 days)
-- Filter early in queries (use `where` clauses first)
-- Limit result sets with `take` or `top`
-
-#### Resource Usage
-- Monitor workspace ingestion limits
-- Set up data retention policies
-- Use summarization for long-term analysis
-
-## Maintenance
-
-### Regular Tasks
-
-#### Weekly
-- Review data quality metrics
-- Check for new GuardDuty finding types
-- Validate connector health
-
-#### Monthly  
-- Update parser functions if needed
-- Review and optimize alerting rules
-- Analyze performance metrics
-
-#### Quarterly
-- Review and update documentation
-- Test disaster recovery procedures
-- Evaluate new GuardDuty features
-
-### Version Updates
-
-When updating the parser functions:
-
-1. **Test in Development First**
-   ```bash
-   # Deploy to dev environment
-   az deployment group create \
-     --resource-group "dev-rg" \
-     --template-file deployment/deploy.bicep \
-     --parameters @deployment/parameters/dev.parameters.json
-   ```
-
-2. **Validate New Version**
-   ```powershell
-   ./scripts/validate-deployment.ps1 -WorkspaceName "dev-workspace" -ResourceGroupName "dev-rg" -RunSmokeTests
-   ```
-
-3. **Deploy to Production**
-   ```bash
-   # Only after successful dev testing
-   az deployment group create \
-     --resource-group "prod-rg" \
-     --template-file deployment/deploy.bicep \
-     --parameters @deployment/parameters/prod.parameters.json
-   ```
-
-## Support and Escalation
-
-### Internal Support
-- **Level 1:** Check troubleshooting guide and run validation scripts
-- **Level 2:** Review Azure activity logs and connector status
-- **Level 3:** Engage Microsoft Support for Sentinel-specific issues
-
-### External Resources
-- **Microsoft Sentinel Documentation:** https://docs.microsoft.com/azure/sentinel/
-- **AWS GuardDuty Documentation:** https://docs.aws.amazon.com/guardduty/
-- **KQL Reference:** https://docs.microsoft.com/azure/data-explorer/kusto/
-
-### Emergency Contacts
-- **Security Team:** security@company.com
-- **Azure Support:** [Support Case Portal]
-- **On-Call Engineer:** [Contact Information]
+This runbook covers the end-to-end deployment, upgrade, and rollback procedures for the GuardDuty Sentinel integration. Follow each section in order for a fresh deployment; for upgrades jump to [Upgrading an Existing Deployment](#upgrading-an-existing-deployment).
 
 ---
 
-**Document Version:** 1.1.0  
-**Last Updated:** 2024-02-01  
-**Next Review:** 2024-05-01
+## Table of Contents
+
+1. [Pre-Deployment Checklist](#pre-deployment-checklist)
+2. [AWS-Side Setup](#aws-side-setup)
+3. [Sentinel-Side Deployment](#sentinel-side-deployment)
+4. [Lambda Handler Deployment (Optional)](#lambda-handler-deployment-optional)
+5. [Post-Deployment Validation](#post-deployment-validation)
+6. [Upgrading an Existing Deployment](#upgrading-an-existing-deployment)
+7. [Rollback Procedure](#rollback-procedure)
+8. [Operational Runbook](#operational-runbook)
+
+---
+
+## Pre-Deployment Checklist
+
+Complete all items before starting deployment.
+
+### Azure
+- [ ] Sentinel workspace exists and is active
+- [ ] You have **Contributor** or **Log Analytics Contributor** on the resource group
+- [ ] Azure CLI installed and authenticated (`az account show`)
+- [ ] Target resource group confirmed: `az group show --name <rg>`
+
+### AWS
+- [ ] GuardDuty enabled in the target region
+- [ ] S3 bucket created for GuardDuty exports (or use automatic setup)
+- [ ] SQS queue configured for S3 event notifications
+- [ ] IAM role with required permissions (see [KMS Permissions Guide](kms-permissions.md))
+- [ ] KMS key ARN noted (if GuardDuty exports are encrypted)
+
+### Repository
+- [ ] Cloned latest `main` branch
+- [ ] `deployment/azuredeploy.json` present
+- [ ] `scripts/lambda_ingestion_handler.py` present (if using Lambda path)
+
+---
+
+## AWS-Side Setup
+
+### 1. Enable GuardDuty Export to S3
+
+```bash
+# Get your detector ID
+DETECTOR_ID=$(aws guardduty list-detectors --query 'DetectorIds[0]' --output text)
+
+# Create S3 publishing destination
+aws guardduty create-publishing-destination \
+  --detector-id "$DETECTOR_ID" \
+  --destination-type S3 \
+  --destination-properties \
+    DestinationArn=arn:aws:s3:::your-guardduty-bucket,\
+    KmsKeyArn=arn:aws:kms:eu-west-2:123456789012:key/your-key-id
+```
+
+### 2. Verify Export is Active
+
+```bash
+aws guardduty list-publishing-destinations --detector-id "$DETECTOR_ID"
+# Status should be PUBLISHING
+```
+
+### 3. Confirm SQS Notifications
+
+```bash
+# Check S3 bucket notification config points to your SQS queue
+aws s3api get-bucket-notification-configuration --bucket your-guardduty-bucket
+```
+
+---
+
+## Sentinel-Side Deployment
+
+### Option A — deploy.sh (Recommended)
+
+```bash
+cd guardduty-sentinel-integration
+
+./deploy.sh \
+  --resource-group  your-resource-group \
+  --workspace       your-sentinel-workspace \
+  --table           AWSGuardDuty \
+  --column          EventData \
+  --lookback        7d
+```
+
+The script validates prerequisites, creates a timestamped deployment, and prints next steps.
+
+### Option B — Azure CLI
+
+```bash
+az deployment group create \
+  --resource-group  your-resource-group \
+  --name            guardduty-kql-$(date +%Y%m%d) \
+  --template-file   deployment/azuredeploy.json \
+  --parameters \
+    workspaceName=your-sentinel-workspace \
+    guardDutyTableName=AWSGuardDuty \
+    rawDataColumn=EventData \
+    defaultLookback=7d
+```
+
+### Option C — PowerShell
+
+```powershell
+New-AzResourceGroupDeployment `
+  -ResourceGroupName "your-resource-group" `
+  -TemplateFile      "deployment/azuredeploy.json" `
+  -workspaceName     "your-sentinel-workspace" `
+  -guardDutyTableName "AWSGuardDuty" `
+  -rawDataColumn     "EventData"
+```
+
+### Verify KQL Functions Deployed
+
+```bash
+az monitor log-analytics workspace saved-search list \
+  --resource-group  your-resource-group \
+  --workspace-name  your-sentinel-workspace \
+  --query "[].properties.functionAlias" \
+  --output table
+```
+
+Expected output includes all eight functions:
+```
+AWSGuardDuty_Config
+AWSGuardDuty_Main
+AWSGuardDuty_Network
+AWSGuardDuty_IAM
+AWSGuardDuty_S3
+AWSGuardDuty_EKS
+AWSGuardDuty_Schema
+AWSGuardDuty_ASIMNetworkSession
+```
+
+---
+
+## Lambda Handler Deployment (Optional)
+
+Use this path when sub-minute latency is required.
+
+### 1. Package the Function
+
+```bash
+cd scripts
+zip lambda_ingestion_handler.zip lambda_ingestion_handler.py
+```
+
+### 2. Create the Lambda Function
+
+```bash
+aws lambda create-function \
+  --function-name  guardduty-sentinel-ingestion \
+  --runtime        python3.12 \
+  --role           arn:aws:iam::123456789012:role/guardduty-lambda-role \
+  --handler        lambda_ingestion_handler.handler \
+  --zip-file       fileb://lambda_ingestion_handler.zip \
+  --environment    "Variables={
+    SENTINEL_WORKSPACE_ID=your-workspace-id,
+    SENTINEL_SHARED_KEY=your-shared-key,
+    LOG_TYPE=AWSGuardDuty,
+    LOG_LEVEL=INFO,
+    MAX_RETRIES=3
+  }" \
+  --timeout        30
+```
+
+### 3. Create EventBridge Rule
+
+```bash
+# Create rule matching GuardDuty findings
+aws events put-rule \
+  --name    guardduty-to-sentinel \
+  --event-pattern '{"source":["aws.guardduty"],"detail-type":["GuardDuty Finding"]}' \
+  --state   ENABLED
+
+# Attach Lambda as target
+aws events put-targets \
+  --rule  guardduty-to-sentinel \
+  --targets "Id=sentinel-lambda,Arn=arn:aws:lambda:eu-west-2:123456789012:function:guardduty-sentinel-ingestion"
+
+# Grant EventBridge permission to invoke Lambda
+aws lambda add-permission \
+  --function-name  guardduty-sentinel-ingestion \
+  --statement-id   EventBridgeInvoke \
+  --action         lambda:InvokeFunction \
+  --principal      events.amazonaws.com \
+  --source-arn     arn:aws:events:eu-west-2:123456789012:rule/guardduty-to-sentinel
+```
+
+---
+
+## Post-Deployment Validation
+
+Run these immediately after deployment. All tests live in `validation/smoke_tests.kql`.
+
+### Quick Health Check (Sentinel / Log Analytics)
+
+```kql
+// 1. Config function responds
+AWSGuardDuty_Config()
+| take 5
+
+// 2. Data is flowing (adjust lookback if deployment is fresh)
+AWSGuardDuty_Main(1d)
+| summarize count() by SeverityLevel
+| order by SeverityLevel asc
+
+// 3. Network parser works
+AWSGuardDuty_Network(7d)
+| summarize count() by ThreatCategory
+
+// 4. ASIM compliance
+AWSGuardDuty_ASIMNetworkSession(1d)
+| summarize count() by ASIMCompliance
+```
+
+### Expected Results
+
+| Test | Pass Condition |
+|------|---------------|
+| Config responds | Returns ≥ 10 rows |
+| Main parser | Returns rows with non-null FindingId |
+| Network parser | Returns rows if network findings exist |
+| ASIM | All rows show `Compliant` |
+
+---
+
+## Upgrading an Existing Deployment
+
+1. **Pull latest changes**
+   ```bash
+   git pull origin main
+   ```
+
+2. **Check what changed**
+   ```bash
+   git diff HEAD~1 deployment/azuredeploy.json kql/
+   ```
+
+3. **Re-run deployment** using the same command as the initial deploy. ARM deployments are idempotent — existing functions are updated in-place.
+
+4. **Validate** using the smoke tests above.
+
+5. **Update Lambda** (if deployed):
+   ```bash
+   zip lambda_ingestion_handler.zip scripts/lambda_ingestion_handler.py
+   aws lambda update-function-code \
+     --function-name guardduty-sentinel-ingestion \
+     --zip-file      fileb://lambda_ingestion_handler.zip
+   ```
+
+---
+
+## Rollback Procedure
+
+### KQL Functions
+
+ARM deployments are versioned. Roll back to the previous deployment:
+
+```bash
+# List recent deployments
+az deployment group list \
+  --resource-group your-resource-group \
+  --query "[].{name:name, timestamp:properties.timestamp, state:properties.provisioningState}" \
+  --output table
+
+# Redeploy a specific previous deployment
+az deployment group create \
+  --resource-group your-resource-group \
+  --name           guardduty-rollback-$(date +%Y%m%d) \
+  --template-file  deployment/azuredeploy.json \
+  --parameters     workspaceName=your-sentinel-workspace
+```
+
+### Lambda Function
+
+```bash
+# List versions
+aws lambda list-versions-by-function --function-name guardduty-sentinel-ingestion
+
+# Roll back to a specific version by updating the alias
+aws lambda update-alias \
+  --function-name  guardduty-sentinel-ingestion \
+  --name           live \
+  --function-version 2   # previous stable version
+```
+
+---
+
+## Operational Runbook
+
+### Daily Health Check
+
+```kql
+// Ingestion rate — should be non-zero if GuardDuty has findings
+AWSGuardDuty
+| where TimeGenerated > ago(24h)
+| summarize RecordCount = count() by bin(TimeGenerated, 1h)
+| render timechart
+```
+
+### Alert: No Data for 2+ Hours
+
+1. Check AWS GuardDuty console — are findings being generated?
+2. Check SQS queue depth:
+   ```bash
+   aws sqs get-queue-attributes \
+     --queue-url https://sqs.eu-west-2.amazonaws.com/123456789012/sentinel-guardduty-queue \
+     --attribute-names ApproximateNumberOfMessages
+   ```
+3. Check Sentinel connector status in the Data Connectors blade.
+4. Review KMS permissions: [kms-permissions.md](kms-permissions.md).
+
+### Alert: Lambda Errors (if using Lambda path)
+
+```bash
+# Check recent Lambda errors
+aws logs filter-log-events \
+  --log-group-name /aws/lambda/guardduty-sentinel-ingestion \
+  --filter-pattern "ERROR" \
+  --start-time $(date -d '1 hour ago' +%s000)
+```
+
+Common causes:
+- `SENTINEL_WORKSPACE_ID` / `SENTINEL_SHARED_KEY` not set or rotated
+- Network connectivity to `*.ods.opinsights.azure.com`
+- Lambda execution role missing CloudWatch Logs permissions
+
+### Rotating the Sentinel Shared Key
+
+1. In Azure Portal, go to your Log Analytics workspace → **Agents** → **Primary/Secondary key**.
+2. Regenerate the key.
+3. Update Lambda environment variable:
+   ```bash
+   aws lambda update-function-configuration \
+     --function-name guardduty-sentinel-ingestion \
+     --environment "Variables={SENTINEL_SHARED_KEY=new-key-value,...}"
+   ```
+4. Verify ingestion resumes within 5 minutes.

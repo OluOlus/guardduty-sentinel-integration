@@ -1,0 +1,117 @@
+// AWSGuardDuty_RDS
+// RDS/database-focused parser for GuardDuty findings.
+// Covers CredentialAccess:RDS/*, Discovery:RDS/*, Impact:RDS/* and
+// the GuardDuty RDS Protection login anomaly findings.
+// Extracts database instance context, login activity, and IAM caller details.
+let AWSGuardDuty_RDS = (lookback: timespan = timespan(null)) {
+    AWSGuardDuty_Main(lookback)
+    | where ResourceType == "RDSDBInstance"
+        or FindingType has "RDS/"
+        or FindingType has_any(
+            "CredentialAccess:RDS", "Discovery:RDS", "Impact:RDS",
+            "Exfiltration:RDS", "PenTest:RDS"
+        )
+    // ── RDS instance details ─────────────────────────────────────────────────
+    | extend _rds = gd.resource.rdsDbInstanceDetails
+    | extend
+        DbInstanceId       = tostring(_rds.dbInstanceIdentifier),
+        DbClusterId        = tostring(_rds.dbClusterIdentifier),
+        DbEngine           = tostring(_rds.engine),
+        DbEngineVersion    = tostring(_rds.engineVersion),
+        DbInstanceClass    = tostring(_rds.dbInstanceClass),
+        DbInstancePort     = toint(_rds.dbInstancePort),
+        DbInstanceStatus   = tostring(_rds.dbInstanceStatus),
+        DbStorageEncrypted = tobool(_rds.storageEncrypted),
+        DbTags             = _rds.tags,
+        DbAvailabilityZone = tostring(_rds.availabilityZone),
+        DbMultiAz          = tobool(_rds.multiAz),
+        DbPubliclyAccessible = tobool(_rds.publiclyAccessible)
+    // ── RDS login activity (GuardDuty RDS Protection findings) ───────────────
+    | extend _login = gd.service.rdsLoginAttemptAction
+    | extend
+        LoginUser          = tostring(_login.loginAttributes[0].user),
+        LoginApplication   = tostring(_login.loginAttributes[0].application),
+        LoginResult        = tostring(_login.loginAttributes[0].successfulLoginBruteForcedAccounts),
+        LoginFailedCount   = toint(_login.loginAttributes[0].failedLoginAttempts),
+        LoginSuccessCount  = toint(_login.loginAttributes[0].successfulLoginAttempts),
+        RemoteIp_RDS       = tostring(_login.remoteIpDetails.ipAddressV4),
+        RemoteCountry_RDS  = tostring(_login.remoteIpDetails.country.countryName),
+        RemoteCity_RDS     = tostring(_login.remoteIpDetails.city.cityName),
+        RemoteOrg_RDS      = tostring(_login.remoteIpDetails.organization.org)
+    // ── IAM caller context (API-driven findings) ─────────────────────────────
+    | extend
+        CallerUserName     = tostring(gd.resource.accessKeyDetails.userName),
+        CallerUserType     = tostring(gd.resource.accessKeyDetails.userType),
+        CallerAccessKeyId  = tostring(gd.resource.accessKeyDetails.accessKeyId),
+        CallerPrincipalId  = tostring(gd.resource.accessKeyDetails.principalId),
+        ApiName            = tostring(gd.service.action.awsApiCallAction.api)
+    // ── Threat classification ─────────────────────────────────────────────────
+    | extend RdsThreatCategory = case(
+        FindingType has "CredentialAccess",                     "Credential Access",
+        FindingType has "BruteForce",                           "Brute Force",
+        FindingType has "AnomalousBehavior",                    "Anomalous Behaviour",
+        FindingType has "Discovery",                            "Reconnaissance",
+        FindingType has "Exfiltration",                         "Data Exfiltration",
+        FindingType has "Impact",                               "Data Impact",
+        FindingType has "PenTest",                              "Penetration Testing",
+        "RDS Anomaly"
+    )
+    // ── Risk scoring ──────────────────────────────────────────────────────────
+    | extend RdsRiskScore =
+        iff(SeverityLevel == "Critical",         40, 0) +
+        iff(SeverityLevel == "High",             30, 0) +
+        iff(SeverityLevel == "Medium",           20, 0) +
+        iff(SeverityLevel == "Low",              10, 0) +
+        iff(DbPubliclyAccessible == true,        20, 0) +
+        iff(DbStorageEncrypted == false,         15, 0) +
+        iff(RdsThreatCategory == "Brute Force",  15, 0) +
+        iff(RdsThreatCategory == "Data Exfiltration", 10, 0)
+    | project-away _rds, _login
+    | project
+        // Core identifiers
+        TimeGenerated,
+        EventTime,
+        FindingId,
+        FindingType,
+        RdsThreatCategory,
+        Severity,
+        SeverityLevel,
+        RdsRiskScore,
+        Title,
+        Description,
+        AwsAccountId,
+        AwsRegion,
+        // RDS instance context
+        DbInstanceId,
+        DbClusterId,
+        DbEngine,
+        DbEngineVersion,
+        DbInstanceClass,
+        DbInstancePort,
+        DbInstanceStatus,
+        DbStorageEncrypted,
+        DbPubliclyAccessible,
+        DbMultiAz,
+        DbAvailabilityZone,
+        // Login activity (RDS Protection findings)
+        LoginUser,
+        LoginApplication,
+        LoginFailedCount,
+        LoginSuccessCount,
+        // IAM caller context
+        CallerUserName,
+        CallerUserType,
+        CallerAccessKeyId,
+        CallerPrincipalId,
+        ApiName,
+        // Network context
+        RemoteIp_RDS,
+        RemoteCountry_RDS,
+        RemoteCity_RDS,
+        RemoteOrg_RDS,
+        // Metadata
+        ParserVersion,
+        RecordSource = "AWSGuardDuty_RDS",
+        RawJson
+};
+AWSGuardDuty_RDS

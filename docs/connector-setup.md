@@ -142,10 +142,10 @@ Run the smoke tests to verify everything is working:
 ```
 
 Expected results:
-- ✅ GuardDuty data is available
-- ✅ Data structure is valid
-- ✅ Multiple finding types detected
-- ✅ Network and IAM findings parse correctly
+- GuardDuty data is available
+- Data structure is valid
+- Multiple finding types detected
+- Network and IAM findings parse correctly
 
 ## Step 7: Start Using GuardDuty Data
 
@@ -179,9 +179,9 @@ Ensure GuardDuty is exporting in JSON format (not CSV) to the S3 bucket.
 
 ## Next Steps
 
-- Review [sample queries](../sample-data/test_queries.kql) for analysis examples
-- Set up [analytics rules](../samples/sentinel/analytics-rules/) for automated detection
-- Configure [workbooks](../samples/sentinel/workbooks/) for dashboards
+- Review the query examples in the [README](../README.md#usage-examples)
+- Run the [smoke tests](../validation/smoke_tests.kql) after each deployment
+- Use the [troubleshooting queries](../validation/troubleshooting.kql) when data is delayed or missing
 - See [troubleshooting guide](troubleshooting.md) for common issues
 
 ## Support

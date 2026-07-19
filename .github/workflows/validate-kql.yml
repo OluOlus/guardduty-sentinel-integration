@@ -6,26 +6,28 @@ on:
     paths:
       - 'kql/**'
       - 'deployment/**'
-      - 'sample-data/**'
       - 'validation/**'
+      - 'scripts/**'
+      - 'tests/**'
   pull_request:
     branches: [ main ]
     paths:
       - 'kql/**'
       - 'deployment/**'
-      - 'sample-data/**'
       - 'validation/**'
+      - 'scripts/**'
+      - 'tests/**'
 
 jobs:
   validate:
-    name: Validate KQL, ARM, and sample data
+    name: Validate KQL, ARM, and Lambda parser
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout
       uses: actions/checkout@v4
 
-    # ── JSON / JSONL validation ────────────────────────────────────────────────
+    # ── JSON validation ────────────────────────────────────────────────────────
     - name: Validate ARM template JSON
       run: |
         echo "=== Validating JSON files ==="
@@ -41,29 +43,6 @@ jobs:
         for e in errors:
             print(e, file=sys.stderr)
         sys.exit(len(errors))
-        "
-
-    - name: Validate sample JSONL data
-      run: |
-        echo "=== Validating sample-data/guardduty_findings.jsonl ==="
-        python3 -c "
-        import json, sys
-        path = 'sample-data/guardduty_findings.jsonl'
-        errors = []
-        with open(path) as f:
-            for i, line in enumerate(f, 1):
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    json.loads(line)
-                except json.JSONDecodeError as e:
-                    errors.append(f'Line {i}: {e}')
-        if errors:
-            for e in errors:
-                print(e, file=sys.stderr)
-            sys.exit(1)
-        print(f'PASS: all lines in {path} are valid JSON')
         "
 
     # ── Required file presence ─────────────────────────────────────────────────
@@ -100,7 +79,6 @@ jobs:
           "docs/troubleshooting.md"
           "docs/kms-permissions.md"
           "validation/smoke_tests.kql"
-          "sample-data/test_queries.kql"
         )
         fail=0
         for f in "${required[@]}"; do
@@ -237,46 +215,17 @@ jobs:
         sys.exit(len(missing))
         "
 
-    # ── Sample data content checks ─────────────────────────────────────────────
-    - name: Check sample data coverage
+    # ── Lambda handler unit tests ─────────────────────────────────────────────
+    - name: Run Lambda parser tests
       run: |
-        echo "=== Checking sample data finding type coverage ==="
-        python3 << 'PYEOF'
-        import json, sys
-
-        categories = {
-            'network': lambda d: 'NETWORK_CONNECTION' in json.dumps(d),
-            'iam_api': lambda d: 'AWS_API_CALL' in json.dumps(d),
-            's3':      lambda d: 's3BucketDetails' in json.dumps(d),
-            'eks':     lambda d: 'Kubernetes' in json.dumps(d) or 'EKSCluster' in json.dumps(d),
-        }
-
-        found = {k: False for k in categories}
-        with open('sample-data/guardduty_findings.jsonl') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                    detail = obj.get('detail', obj)
-                    for cat, check in categories.items():
-                        if check(detail):
-                            found[cat] = True
-                except json.JSONDecodeError:
-                    pass
-
-        for cat, ok in found.items():
-            status = 'PASS' if ok else 'WARN'
-            print(f'{status}: sample data {"contains" if ok else "missing"} {cat} finding')
-        PYEOF
+        echo "=== Running Python unit tests ==="
+        python3 -m unittest discover -s tests -p 'test_*.py'
 
     - name: Summary
       run: |
         echo "================================================================"
         echo "All required validation checks passed."
         KQL_COUNT=$(ls kql/*.kql 2>/dev/null | wc -l)
-        SAMPLE_COUNT=$(grep -c . sample-data/guardduty_findings.jsonl 2>/dev/null || echo 0)
         echo "KQL parser files: $KQL_COUNT"
-        echo "Sample findings:  $SAMPLE_COUNT"
+        echo "Python tests:     $(find tests -name 'test_*.py' | wc -l)"
         echo "================================================================"

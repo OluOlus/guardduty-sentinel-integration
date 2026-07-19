@@ -169,8 +169,13 @@ fi
 
 print_success "Log Analytics workspace exists"
 
-# Create temporary parameters file
+# Create temporary parameters file and ensure it is removed on every exit path.
 TEMP_PARAMS=$(mktemp)
+cleanup() {
+    rm -f "$TEMP_PARAMS"
+}
+trap cleanup EXIT
+
 cat > "$TEMP_PARAMS" << EOF
 {
     "\$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
@@ -204,10 +209,7 @@ if az deployment group create \
     --output table; then
     
     print_success "Deployment completed successfully!"
-    
-    # Clean up temp file
-    rm -f "$TEMP_PARAMS"
-    
+
     echo ""
     print_success "GuardDuty KQL functions have been deployed!"
     echo ""
@@ -231,6 +233,5 @@ if az deployment group create \
     
 else
     print_error "Deployment failed!"
-    rm -f "$TEMP_PARAMS"
     exit 1
 fi
