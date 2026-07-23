@@ -1,6 +1,6 @@
 # GuardDuty → Sentinel Integration
 
-Production-ready ingestion and KQL parsing layer for AWS GuardDuty findings in Microsoft Sentinel. Supports two ingestion paths: the native AWS S3 connector (polling) and a direct Lambda push via the Log Analytics Data Collector API.
+Production-ready ingestion and KQL parsing layer for AWS GuardDuty findings in Microsoft Sentinel. Supports the native AWS S3 connector and a direct EventBridge/Lambda path through Azure Monitor's DCR Logs Ingestion API.
 
 ## What This Solves
 
@@ -63,7 +63,7 @@ AWSGuardDuty_Main(1d) | take 10
                     │                                                         │
  AWS GuardDuty ─┬──▶ S3 Export → SQS → Sentinel AWS S3 Connector (polling)   │
                 │   │                                                         │
-                └──▶ EventBridge → Lambda → Log Analytics API (real-time)     │
+                └──▶ EventBridge → Lambda → DCR Logs Ingestion (real-time)   │
                     │                                                         │
                     └──────────────────────────┬──────────────────────────────┘
                                                │
@@ -76,15 +76,15 @@ AWSGuardDuty_Main(1d) | take 10
 
 **Path 1 — S3 Connector (default):** Native Microsoft connector polls an SQS queue for S3 object notifications. No custom compute required. ~15-30 min latency.
 
-**Path 2 — Lambda Direct Push (optional):** EventBridge rule triggers a Lambda that transforms and POSTs findings directly to the Log Analytics Data Collector API. Sub-minute latency.
+**Path 2 — Lambda Direct Push (optional):** EventBridge triggers Lambda, which maps the finding to Microsoft's built-in `AWSGuardDuty` table contract and sends it through the DCR Logs Ingestion API. Sub-minute latency.
 
 **Key Benefits:**
 - Two ingestion paths: S3 connector (managed) or Lambda (real-time)
 - Uses existing, supported Microsoft connector for the primary path
-- Config-driven parsing (change table names once)
+- One documented native table contract for both routes
 - ASIM-aligned for cross-source hunting
 - Built-in troubleshooting for common issues (KMS permissions)
-- Handles both direct JSON and EventBridge envelope formats automatically
+- Raises delivery failures so Lambda retries and on-failure destinations work
 
 ## KQL Functions
 
@@ -98,6 +98,8 @@ AWSGuardDuty_Main(1d) | take 10
 | `AWSGuardDuty_IAM(lookback)` | IAM/API call findings | ApiName, UserName, AccessKeyId, RiskScore |
 | `AWSGuardDuty_S3(lookback)` | S3 bucket findings | BucketName, EffectivePermission, EncryptionType |
 | `AWSGuardDuty_EKS(lookback)` | EKS/Kubernetes findings | K8sNamespace, K8sUserName, K8sThreatCategory |
+| `AWSGuardDuty_Malware(lookback)` | Malware scan findings | ScanId, ThreatName, ScanResult |
+| `AWSGuardDuty_RDS(lookback)` | RDS database findings | DbInstanceId, DbUser, AuthMethod |
 | `AWSGuardDuty_ASIMNetworkSession(lookback)` | ASIM network session normalization | SrcIpAddr, DstIpAddr, ThreatRiskLevel |
 | `AWSGuardDuty_Schema(lookback)` | Data quality validation | OverallQualityScore, QualityCategory |
 
@@ -133,21 +135,17 @@ AWSGuardDuty_ASIMNetworkSession(1d)
 
 ## Configuration
 
-All functions read from a single config function. Change settings once:
+All parsers compile against Microsoft's documented built-in `AWSGuardDuty`
+table. The configuration function controls lookback and feature flags:
 
 ```kql
 AWSGuardDuty_Config()
-| where Setting == "TableName"  // Default: "AWSGuardDuty"
-| where Setting == "RawColumn"  // Default: "EventData" 
 | where Setting == "DefaultLookback"  // Default: "7d"
 ```
 
-To customize, redeploy with different parameters:
-```bash
-az deployment group create \
-  --template-file deployment/azuredeploy.json \
-  --parameters workspaceName=MyWorkspace guardDutyTableName=CustomTable
-```
+`EventData` and `Message` are not columns in that native table. A custom source
+table needs a separate adapter function; silently guessing a raw column is not
+supported.
 
 ## Common Issues & Solutions
 
@@ -156,8 +154,9 @@ az deployment group create \
 **Solution**: See [KMS Permissions Guide](docs/kms-permissions.md)
 
 ### Issue 2: Parsing Functions Return Empty
-**Cause**: Wrong column name or data format
-**Solution**: Check `AWSGuardDuty | getschema` and update config
+**Cause**: The source does not match the native Microsoft table contract
+**Solution**: Run `AWSGuardDuty | getschema` and compare it with
+`contracts/azure/awsguardduty-table.schema.json`.
 
 ### Issue 3: Only Low Severity Findings
 **Cause**: Data lag - high severity findings export slower
@@ -180,7 +179,8 @@ AWSGuardDuty_Main(1d) | take 10
 - Multiple finding types detected
 - Network, IAM, S3, and EKS findings parse correctly
 
-> **Note:** Sample data and test queries have been removed from the repository and are kept locally only. Use the smoke tests in `validation/` for deployment validation.
+Synthetic, non-secret contract fixtures are versioned under
+`tests/fixtures/guardduty/`. Use `validation/` for post-deployment checks.
 
 ## Documentation
 
@@ -189,6 +189,8 @@ AWSGuardDuty_Main(1d) | take 10
 | [Connector Setup](docs/connector-setup.md) | Step-by-step AWS S3 connector configuration |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and diagnostic queries |
 | [KMS Permissions](docs/kms-permissions.md) | Fixing the #1 cause of ingestion failures |
+| [Test Strategy](docs/test-strategy.md) | Contract, container, mutation, resilience, and live-cloud gates |
+| [Proposed Upstream Issue](docs/proposed-upstream-issue.md) | Ready-to-paste maintainer discussion with the test-system diagram |
 
 ## What's Included
 
@@ -196,11 +198,13 @@ AWSGuardDuty_Main(1d) | take 10
 guardduty-sentinel-integration/
 ├── kql/                          # KQL parsing functions
 │   ├── AWSGuardDuty_Config.kql
-│   ├── AWSGuardDuty_Main.kql          # handles both direct & EventBridge envelope formats
+│   ├── AWSGuardDuty_Main.kql          # native AWSGuardDuty table adapter
 │   ├── AWSGuardDuty_Network.kql
 │   ├── AWSGuardDuty_IAM.kql
 │   ├── AWSGuardDuty_S3.kql            # S3 bucket findings
 │   ├── AWSGuardDuty_EKS.kql           # EKS/Kubernetes findings
+│   ├── AWSGuardDuty_Malware.kql
+│   ├── AWSGuardDuty_RDS.kql
 │   ├── AWSGuardDuty_ASIMNetworkSession.kql
 │   └── AWSGuardDuty_Schema.kql        # data quality validation
 ├── deployment/                   # ARM/Bicep templates
@@ -208,6 +212,11 @@ guardduty-sentinel-integration/
 │   └── deploy.bicep
 ├── scripts/                      # Deployment and ingestion scripts
 │   ├── lambda_ingestion_handler.py    # EventBridge → Sentinel direct push (Lambda)
+│   ├── run_live_conformance.py
+│   ├── sync_arm_template.py
+│   └── gates.sh
+├── contracts/                    # Versioned AWS, EventBridge, and Azure schemas
+├── tests/                        # Unit, property, contract, and container tests
 │   └── validate-deployment.ps1
 ├── validation/                   # Diagnostic queries
 │   ├── smoke_tests.kql
@@ -219,26 +228,32 @@ guardduty-sentinel-integration/
 └── deploy.sh                     # One-command deployment script
 ```
 
-> **Note:** `sample-data/` and `requirements.md` are kept locally only (gitignored) and not included in the repository.
-
 ## Lambda Direct-Push Handler (Optional)
 
 For real-time ingestion without the S3/SQS polling delay, deploy the Lambda function at `scripts/lambda_ingestion_handler.py`. This function:
 
 - Receives GuardDuty findings from EventBridge
 - Auto-detects and unwraps EventBridge envelope format
-- Transforms nested JSON into a flat, Sentinel-friendly schema
-- Posts to the Log Analytics Data Collector API with HMAC-SHA256 auth
-- Returns structured error responses for each failure mode
+- Maps nested JSON to Microsoft's exact built-in table schema
+- Posts with Entra OAuth to the DCR Logs Ingestion API
+- Retries transient failures and raises exhausted failures to Lambda
 
 ### Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `SENTINEL_WORKSPACE_ID` | Log Analytics workspace ID |
-| `SENTINEL_SHARED_KEY` | Log Analytics primary/secondary key |
-| `LOG_TYPE` | Target table name (default: `AWSGuardDuty`) |
+| `AZURE_TENANT_ID` | Entra tenant containing the ingestion application |
+| `AZURE_CLIENT_ID` | Entra application/client ID |
+| `AZURE_CLIENT_SECRET` | Entra client secret (prefer a secret manager at deployment) |
+| `AZURE_LOGS_INGESTION_ENDPOINT` | DCR/DCE ingestion endpoint |
+| `AZURE_DCR_IMMUTABLE_ID` | DCR immutable ID |
+| `AZURE_DCR_STREAM_NAME` | DCR stream (default: `Microsoft-AWSGuardDuty`) |
+| `MAX_RETRIES` | Total request attempts (default: `3`) |
 | `LOG_LEVEL` | Logging verbosity (default: `INFO`) |
+
+The legacy shared-key API remains available only with
+`INGESTION_MODE=legacy` during migration. Microsoft ends support for that API
+on September 14, 2026.
 
 ### EventBridge Rule
 
@@ -268,22 +283,9 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Version
 
-Current version: **1.4.0**
+Current version: **1.5.0**
 
-**What's New in 1.3.0:**
-- Added `scripts/lambda_ingestion_handler.py` — direct EventBridge→Sentinel push via Log Analytics Data Collector API
-- Two ingestion paths: S3 connector (managed, polling) and Lambda (real-time, sub-minute)
-- Lambda handler includes HMAC-SHA256 auth, structured error handling, and automatic envelope detection
-- Updated architecture diagram to reflect both ingestion paths
-- CI workflow fix: ASIM parser upstream reference validation now accepts transitive dependencies
-- Deployed and validated end-to-end with live GuardDuty findings (406 findings, 202 unique types)
-
-**What's New in 1.2.0:**
-- Added `AWSGuardDuty_S3` parser — extracts bucket encryption, public access posture, and ACL details
-- Added `AWSGuardDuty_EKS` parser — covers EKS audit log and Runtime Monitoring findings
-- Fixed `AWSGuardDuty_Main` to auto-detect and unwrap EventBridge envelope format
-- Fixed `AWSGuardDuty_ASIMNetworkSession` — removed references to columns that do not exist in upstream schema
-- Updated `AWSGuardDuty_Config` with `HandleEventBridgeEnvelope` flag and `Critical` severity tier
-- ARM template now deploys all 8 parsers
-- CI workflow now validates S3/EKS parsers, sample data coverage, and ARM function list
-- Sample data expanded to 7 findings covering Network, IAM, S3, EKS, and both input formats
+Version 1.5 establishes executable AWS/EventBridge/Azure contracts, DCR
+ingestion, official AWS severity boundaries, correct asynchronous Lambda
+failure semantics, generated IaC parity, Testcontainers for LocalStack and
+Kusto, a 70% mutation-score ratchet, and protected live-cloud conformance.

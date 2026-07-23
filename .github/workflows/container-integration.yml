@@ -1,0 +1,42 @@
+name: Container integration
+
+on:
+  pull_request:
+    paths:
+      - "kql/**"
+      - "scripts/**"
+      - "tests/integration/**"
+      - "contracts/**"
+      - "pyproject.toml"
+  workflow_dispatch:
+
+jobs:
+  localstack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RUN_CONTAINER_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: python -m pip install -e ".[test]"
+      - run: python -m pytest tests/integration/test_localstack_transport.py -v
+
+  kusto:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RUN_CONTAINER_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: python -m pip install -e ".[test]"
+      - run: docker pull mcr.microsoft.com/azuredataexplorer/kustainer-linux:latest
+      - run: python -m pytest tests/integration/test_kusto_emulator.py -v
+

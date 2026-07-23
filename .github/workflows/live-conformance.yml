@@ -1,0 +1,39 @@
+name: Live AWS to Sentinel conformance
+
+on:
+  workflow_dispatch:
+    inputs:
+      route:
+        description: Isolated route configured in the protected environment
+        required: true
+        type: choice
+        options:
+          - eventbridge_dcr
+          - s3_sqs
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: guardduty-sentinel-conformance
+    env:
+      CONFIRM_LIVE_CONFORMANCE: "YES"
+      LIVE_ROUTE: ${{ inputs.route }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_GUARDDUTY_DETECTOR_ID: ${{ secrets.AWS_GUARDDUTY_DETECTOR_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      AZURE_WORKSPACE_ID: ${{ secrets.AZURE_WORKSPACE_ID }}
+      RUN_ASIM_TESTERS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: python -m pip install -e ".[test]"
+      - run: python scripts/run_live_conformance.py

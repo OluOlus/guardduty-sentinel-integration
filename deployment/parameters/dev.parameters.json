@@ -5,30 +5,6 @@
     "workspaceName": {
       "value": "sentinel-dev-workspace"
     },
-    "guardDutyTableName": {
-      "value": "AWSGuardDuty"
-    },
-    "rawDataColumn": {
-      "value": "EventData"
-    },
-    "alternateRawDataColumn": {
-      "value": "Message"
-    },
-    "defaultLookback": {
-      "value": "1d"
-    },
-    "maxLookback": {
-      "value": "30d"
-    },
-    "enableGeoEnrichment": {
-      "value": true
-    },
-    "enableASIMNormalization": {
-      "value": true
-    },
-    "enableDataValidation": {
-      "value": true
-    },
     "environment": {
       "value": "dev"
     }

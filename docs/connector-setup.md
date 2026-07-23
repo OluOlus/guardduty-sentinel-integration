@@ -110,8 +110,7 @@ If no data appears after 30 minutes, see the [Troubleshooting Guide](troubleshoo
    # Edit deployment/azuredeploy.parameters.json
    {
      "workspaceName": {"value": "your-sentinel-workspace"},
-     "guardDutyTableName": {"value": "AWSGuardDuty"},
-     "rawDataColumn": {"value": "EventData"}
+     "environment": {"value": "prod"}
    }
    ```
 

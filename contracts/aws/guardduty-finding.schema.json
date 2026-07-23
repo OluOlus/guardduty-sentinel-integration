@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/contracts/aws/guardduty-finding.schema.json",
+  "title": "AWS GuardDuty Finding compatibility contract",
+  "$comment": "Authority: https://docs.aws.amazon.com/guardduty/latest/APIReference/API_Finding.html; reviewed 2026-07-23",
+  "type": "object",
+  "required": [
+    "accountId",
+    "arn",
+    "createdAt",
+    "id",
+    "region",
+    "resource",
+    "schemaVersion",
+    "severity",
+    "type",
+    "updatedAt"
+  ],
+  "properties": {
+    "accountId": {
+      "type": "string",
+      "pattern": "^[0-9]{12}$"
+    },
+    "arn": {
+      "type": "string",
+      "pattern": "^arn:"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "description": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "partition": {
+      "type": "string",
+      "enum": ["aws", "aws-cn", "aws-us-gov"]
+    },
+    "region": {
+      "type": "string",
+      "minLength": 1
+    },
+    "resource": {
+      "type": "object",
+      "required": ["resourceType"],
+      "properties": {
+        "resourceType": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^2\\."
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "severity": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 10
+    },
+    "title": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": true
+}
+

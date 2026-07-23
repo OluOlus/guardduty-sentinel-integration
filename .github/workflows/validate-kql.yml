@@ -1,231 +1,34 @@
-name: Validate KQL Functions
+name: KQL and deployment parity
 
 on:
   push:
-    branches: [ main, develop ]
     paths:
-      - 'kql/**'
-      - 'deployment/**'
-      - 'validation/**'
-      - 'scripts/**'
-      - 'tests/**'
+      - "kql/**"
+      - "deployment/**"
+      - "scripts/sync_arm_template.py"
+      - "tests/contracts/**"
+      - ".github/workflows/validate-kql.yml"
   pull_request:
-    branches: [ main ]
     paths:
-      - 'kql/**'
-      - 'deployment/**'
-      - 'validation/**'
-      - 'scripts/**'
-      - 'tests/**'
+      - "kql/**"
+      - "deployment/**"
+      - "scripts/sync_arm_template.py"
+      - "tests/contracts/**"
+      - ".github/workflows/validate-kql.yml"
 
 jobs:
-  validate:
-    name: Validate KQL, ARM, and Lambda parser
+  parity:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-
-    # ── JSON validation ────────────────────────────────────────────────────────
-    - name: Validate ARM template JSON
-      run: |
-        echo "=== Validating JSON files ==="
-        python3 -c "
-        import json, sys, pathlib
-        errors = []
-        for f in pathlib.Path('deployment').rglob('*.json'):
-            try:
-                json.loads(f.read_text())
-                print(f'PASS: {f}')
-            except json.JSONDecodeError as e:
-                errors.append(f'FAIL: {f} -- {e}')
-        for e in errors:
-            print(e, file=sys.stderr)
-        sys.exit(len(errors))
-        "
-
-    # ── Required file presence ─────────────────────────────────────────────────
-    - name: Check required KQL parser files
-      run: |
-        echo "=== Checking required KQL files ==="
-        required=(
-          "kql/AWSGuardDuty_Config.kql"
-          "kql/AWSGuardDuty_Main.kql"
-          "kql/AWSGuardDuty_Network.kql"
-          "kql/AWSGuardDuty_IAM.kql"
-          "kql/AWSGuardDuty_S3.kql"
-          "kql/AWSGuardDuty_EKS.kql"
-          "kql/AWSGuardDuty_ASIMNetworkSession.kql"
-          "kql/AWSGuardDuty_Schema.kql"
-        )
-        fail=0
-        for f in "${required[@]}"; do
-          if [ -f "$f" ]; then
-            echo "PASS: $f"
-          else
-            echo "FAIL: missing $f" >&2
-            fail=1
-          fi
-        done
-        exit $fail
-
-    - name: Check required documentation files
-      run: |
-        echo "=== Checking required documentation files ==="
-        required=(
-          "README.md"
-          "docs/connector-setup.md"
-          "docs/troubleshooting.md"
-          "docs/kms-permissions.md"
-          "validation/smoke_tests.kql"
-        )
-        fail=0
-        for f in "${required[@]}"; do
-          if [ -f "$f" ]; then
-            echo "PASS: $f"
-          else
-            echo "FAIL: missing $f" >&2
-            fail=1
-          fi
-        done
-        exit $fail
-
-    # ── KQL syntax checks ──────────────────────────────────────────────────────
-    - name: KQL bracket balance check
-      run: |
-        echo "=== Checking KQL bracket balance ==="
-        python3 << 'PYEOF'
-        import sys, pathlib
-        errors = []
-        for f in pathlib.Path('kql').glob('*.kql'):
-            content = f.read_text()
-            stack = []
-            pairs = {'(': ')', '[': ']', '{': '}'}
-            in_dbl = False   # inside double-quoted string
-            in_sgl = False   # inside single-quoted string (includes @'...' raw strings)
-            i = 0
-            while i < len(content):
-                ch = content[i]
-                # Skip single-line comments
-                if not in_dbl and not in_sgl and ch == '/' and i + 1 < len(content) and content[i+1] == '/':
-                    while i < len(content) and content[i] != '\n':
-                        i += 1
-                    continue
-                if ch == '"' and not in_dbl and not in_sgl:
-                    in_dbl = True
-                elif ch == '"' and in_dbl:
-                    in_dbl = False
-                elif ch == "'" and not in_dbl and not in_sgl:
-                    in_sgl = True
-                elif ch == "'" and in_sgl:
-                    in_sgl = False
-                elif not in_dbl and not in_sgl:
-                    if ch in pairs:
-                        stack.append(ch)
-                    elif ch in pairs.values():
-                        if not stack or pairs.get(stack[-1]) != ch:
-                            errors.append(str(f) + ': mismatched bracket near char ' + str(i))
-                            break
-                        stack.pop()
-                i += 1
-            if stack:
-                errors.append(str(f) + ': unclosed brackets ' + str(stack))
-            else:
-                print('PASS: ' + str(f))
-        for e in errors:
-            print(e, file=sys.stderr)
-        sys.exit(len(errors))
-        PYEOF
-
-    - name: KQL content rules check
-      run: |
-        echo "=== Checking KQL content rules ==="
-        python3 << 'PYEOF'
-        import sys, pathlib
-
-        errors = []
-
-        for f in pathlib.Path('kql').glob('*.kql'):
-            name = f.stem
-            content = f.read_text()
-
-            if 'Config' in name and 'datatable' not in content:
-                errors.append(str(f) + ': Config function must contain datatable()')
-
-            downstream = ('AWSGuardDuty_Network', 'AWSGuardDuty_IAM',
-                          'AWSGuardDuty_S3', 'AWSGuardDuty_EKS',
-                          'AWSGuardDuty_ASIMNetworkSession', 'AWSGuardDuty_Schema')
-            if name in downstream:
-                has_upstream = (
-                    'AWSGuardDuty_Config' in content
-                    or 'AWSGuardDuty_Main' in content
-                    or 'AWSGuardDuty_Network' in content
-                )
-                if not has_upstream:
-                    errors.append(str(f) + ': must reference AWSGuardDuty_Config, AWSGuardDuty_Main, or AWSGuardDuty_Network')
-
-            if 'let ' not in content:
-                errors.append(str(f) + ': no let binding found')
-
-            print('PASS: ' + str(f))
-
-        for e in errors:
-            print(e, file=sys.stderr)
-        sys.exit(len(errors))
-        PYEOF
-
-    # ── ARM template structural checks ────────────────────────────────────────
-    - name: Check ARM template parameters
-      run: |
-        echo "=== Checking ARM template parameters ==="
-        python3 -c "
-        import json, sys
-        tmpl = json.loads(open('deployment/azuredeploy.json').read())
-        params = tmpl.get('parameters', {})
-        required = ['workspaceName', 'guardDutyTableName', 'rawDataColumn', 'defaultLookback']
-        errors = []
-        for p in required:
-            if p in params:
-                print('PASS: parameter ' + p)
-            else:
-                errors.append('FAIL: missing parameter ' + p)
-        for e in errors:
-            print(e, file=sys.stderr)
-        sys.exit(len(errors))
-        "
-
-    - name: Check ARM template deploys all parsers
-      run: |
-        echo "=== Checking ARM template deploys all parsers ==="
-        python3 -c "
-        import json, sys
-        tmpl = json.loads(open('deployment/azuredeploy.json').read())
-        deployed = set(tmpl.get('outputs', {}).get('deployedFunctions', {}).get('value', []))
-        required = {
-            'AWSGuardDuty_Config', 'AWSGuardDuty_Main', 'AWSGuardDuty_Network',
-            'AWSGuardDuty_IAM', 'AWSGuardDuty_S3', 'AWSGuardDuty_EKS',
-            'AWSGuardDuty_ASIMNetworkSession', 'AWSGuardDuty_Schema'
-        }
-        missing = required - deployed
-        for fn in sorted(deployed):
-            print('PASS: ' + fn + ' in deployedFunctions')
-        for fn in sorted(missing):
-            print('FAIL: ' + fn + ' missing from deployedFunctions', file=sys.stderr)
-        sys.exit(len(missing))
-        "
-
-    # ── Lambda handler unit tests ─────────────────────────────────────────────
-    - name: Run Lambda parser tests
-      run: |
-        echo "=== Running Python unit tests ==="
-        python3 -m unittest discover -s tests -p 'test_*.py'
-
-    - name: Summary
-      run: |
-        echo "================================================================"
-        echo "All required validation checks passed."
-        KQL_COUNT=$(ls kql/*.kql 2>/dev/null | wc -l)
-        echo "KQL parser files: $KQL_COUNT"
-        echo "Python tests:     $(find tests -name 'test_*.py' | wc -l)"
-        echo "================================================================"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: python -m pip install -e ".[test]"
+      - name: Generated ARM is current
+        run: python scripts/sync_arm_template.py --check
+      - name: Contract and deployment parity tests
+        run: python -m pytest tests/contracts -q
+      - name: Compile Bicep
+        run: az bicep build --file deployment/deploy.bicep --outfile /tmp/guardduty-deploy.json

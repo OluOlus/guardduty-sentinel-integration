@@ -8,10 +8,10 @@ let AWSGuardDuty_Config = () {
         Description: string,
         DefaultValue: string
     )[
-        // Core table configuration
-        "TableName",             "AWSGuardDuty",              "Primary table where GuardDuty data lands via AWS S3 connector",    "AWSGuardDuty",
-        "RawColumn",             "EventData",                 "Column containing raw GuardDuty JSON data",                        "EventData",
-        "AlternateRawColumn",    "Message",                   "Fallback column when primary raw column is empty",                 "Message",
+        // Core table configuration. Columns follow Microsoft's built-in
+        // AWSGuardDuty table contract; there is no EventData/Message raw column.
+        "TableName",             "AWSGuardDuty",              "Informational: parser is compiled against this built-in table",   "AWSGuardDuty",
+        "InputContract",         "Microsoft-AWSGuardDuty",    "Microsoft built-in AWSGuardDuty table schema",                    "Microsoft-AWSGuardDuty",
 
         // Time and performance settings
         "DefaultLookback",       "7d",                        "Default time range when no lookback is specified",                 "7d",
@@ -23,16 +23,10 @@ let AWSGuardDuty_Config = () {
         "MaxSeverityScore",      "10.0",                      "Maximum expected severity score",                                  "10.0",
         "RequiredFields",        "id,type,severity,accountId,region", "Required fields for a valid finding",                      "id,type,severity,accountId,region",
 
-        // Input format handling
-        // GuardDuty findings arrive in two formats:
-        //   Direct  — the raw object IS the finding (schemaVersion at root level)
-        //   EventBridge — the finding is wrapped under a "detail" key
-        "HandleEventBridgeEnvelope", "true",                  "Auto-detect and unwrap EventBridge envelope format",               "true",
-
         // Parser metadata
-        "ParserVersion",         "1.2.0",                     "Current parser package version",                                   "1.2.0",
+        "ParserVersion",         "1.5.0",                     "Current parser package version",                                   "1.5.0",
         "SchemaVersion",         "2.0",                       "Expected GuardDuty schemaVersion prefix",                          "2.0",
-        "LastUpdated",           "2026-06-21",                "Date of last parser update",                                       "2026-06-21",
+        "LastUpdated",           "2026-07-23",                "Date of last parser update",                                       "2026-07-23",
 
         // Feature flags
         "EnableGeoEnrichment",      "true",  "Use geo_info_from_ip_address() to enrich remote IPs",            "true",

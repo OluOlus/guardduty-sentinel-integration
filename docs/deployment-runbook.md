@@ -83,10 +83,7 @@ cd guardduty-sentinel-integration
 
 ./deploy.sh \
   --resource-group  your-resource-group \
-  --workspace       your-sentinel-workspace \
-  --table           AWSGuardDuty \
-  --column          EventData \
-  --lookback        7d
+  --workspace       your-sentinel-workspace
 ```
 
 The script validates prerequisites, creates a timestamped deployment, and prints next steps.
@@ -99,10 +96,7 @@ az deployment group create \
   --name            guardduty-kql-$(date +%Y%m%d) \
   --template-file   deployment/azuredeploy.json \
   --parameters \
-    workspaceName=your-sentinel-workspace \
-    guardDutyTableName=AWSGuardDuty \
-    rawDataColumn=EventData \
-    defaultLookback=7d
+    workspaceName=your-sentinel-workspace
 ```
 
 ### Option C — PowerShell
@@ -111,9 +105,7 @@ az deployment group create \
 New-AzResourceGroupDeployment `
   -ResourceGroupName "your-resource-group" `
   -TemplateFile      "deployment/azuredeploy.json" `
-  -workspaceName     "your-sentinel-workspace" `
-  -guardDutyTableName "AWSGuardDuty" `
-  -rawDataColumn     "EventData"
+  -workspaceName     "your-sentinel-workspace"
 ```
 
 ### Verify KQL Functions Deployed
@@ -126,7 +118,7 @@ az monitor log-analytics workspace saved-search list \
   --output table
 ```
 
-Expected output includes all eight functions:
+Expected output includes all ten functions:
 ```
 AWSGuardDuty_Config
 AWSGuardDuty_Main
@@ -134,6 +126,8 @@ AWSGuardDuty_Network
 AWSGuardDuty_IAM
 AWSGuardDuty_S3
 AWSGuardDuty_EKS
+AWSGuardDuty_Malware
+AWSGuardDuty_RDS
 AWSGuardDuty_Schema
 AWSGuardDuty_ASIMNetworkSession
 ```
@@ -161,9 +155,12 @@ aws lambda create-function \
   --handler        lambda_ingestion_handler.handler \
   --zip-file       fileb://lambda_ingestion_handler.zip \
   --environment    "Variables={
-    SENTINEL_WORKSPACE_ID=your-workspace-id,
-    SENTINEL_SHARED_KEY=your-shared-key,
-    LOG_TYPE=AWSGuardDuty,
+    AZURE_TENANT_ID=your-tenant-id,
+    AZURE_CLIENT_ID=your-client-id,
+    AZURE_CLIENT_SECRET=retrieve-from-secrets-manager,
+    AZURE_LOGS_INGESTION_ENDPOINT=https://your-dce.region.ingest.monitor.azure.com,
+    AZURE_DCR_IMMUTABLE_ID=dcr-your-immutable-id,
+    AZURE_DCR_STREAM_NAME=Microsoft-AWSGuardDuty,
     LOG_LEVEL=INFO,
     MAX_RETRIES=3
   }" \
@@ -328,18 +325,19 @@ aws logs filter-log-events \
 ```
 
 Common causes:
-- `SENTINEL_WORKSPACE_ID` / `SENTINEL_SHARED_KEY` not set or rotated
-- Network connectivity to `*.ods.opinsights.azure.com`
+- Entra/DCR variables are missing or the credential has expired
+- The application lacks `Monitoring Metrics Publisher` on the DCR
+- Network connectivity to `*.ingest.monitor.azure.com`
 - Lambda execution role missing CloudWatch Logs permissions
 
-### Rotating the Sentinel Shared Key
+### Rotating the Entra Client Secret
 
-1. In Azure Portal, go to your Log Analytics workspace → **Agents** → **Primary/Secondary key**.
-2. Regenerate the key.
-3. Update Lambda environment variable:
+1. Create a new credential for the ingestion application.
+2. Update the value in the deployment's secret manager.
+3. Update or redeploy the Lambda reference:
    ```bash
    aws lambda update-function-configuration \
      --function-name guardduty-sentinel-ingestion \
-     --environment "Variables={SENTINEL_SHARED_KEY=new-key-value,...}"
+     --environment "Variables={AZURE_CLIENT_SECRET=new-secret,...}"
    ```
 4. Verify ingestion resumes within 5 minutes.
