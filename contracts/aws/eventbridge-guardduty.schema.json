@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/contracts/aws/eventbridge-guardduty.schema.json",
+  "title": "GuardDuty finding EventBridge envelope",
+  "$comment": "Authority: https://docs.aws.amazon.com/guardduty/latest/ug/guardduty_findings_eventbridge.html; reviewed 2026-07-23",
+  "type": "object",
+  "required": [
+    "version",
+    "id",
+    "detail-type",
+    "source",
+    "account",
+    "time",
+    "region",
+    "resources",
+    "detail"
+  ],
+  "properties": {
+    "version": {
+      "const": "0"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "detail-type": {
+      "const": "GuardDuty Finding"
+    },
+    "source": {
+      "const": "aws.guardduty"
+    },
+    "account": {
+      "type": "string",
+      "pattern": "^[0-9]{12}$"
+    },
+    "time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "region": {
+      "type": "string",
+      "minLength": 1
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "detail": {
+      "$ref": "guardduty-finding.schema.json"
+    }
+  },
+  "additionalProperties": true
+}
+

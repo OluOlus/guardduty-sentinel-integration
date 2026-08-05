@@ -15,9 +15,6 @@ NC='\033[0m' # No Color
 # Default values
 RESOURCE_GROUP=""
 WORKSPACE_NAME=""
-GUARDDUTY_TABLE="AWSGuardDuty"
-RAW_COLUMN="EventData"
-DEFAULT_LOOKBACK="7d"
 TEMPLATE_FILE="deployment/azuredeploy.json"
 PARAMETERS_FILE="deployment/azuredeploy.parameters.json"
 
@@ -47,16 +44,12 @@ show_usage() {
     echo "  -w, --workspace         Sentinel workspace name"
     echo ""
     echo "Optional parameters:"
-    echo "  -t, --table            GuardDuty table name (default: AWSGuardDuty)"
-    echo "  -c, --column           Raw data column name (default: EventData)"
-    echo "  -l, --lookback         Default lookback period (default: 7d)"
     echo "  -f, --template-file    ARM template file (default: deployment/azuredeploy.json)"
     echo "  -p, --parameters-file  Parameters file (default: deployment/azuredeploy.parameters.json)"
     echo "  -h, --help             Show this help message"
     echo ""
     echo "Examples:"
     echo "  $0 -g my-rg -w my-sentinel-workspace"
-    echo "  $0 -g my-rg -w my-workspace -t CustomGuardDutyTable -c RawData"
     echo ""
 }
 
@@ -69,18 +62,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         -w|--workspace)
             WORKSPACE_NAME="$2"
-            shift 2
-            ;;
-        -t|--table)
-            GUARDDUTY_TABLE="$2"
-            shift 2
-            ;;
-        -c|--column)
-            RAW_COLUMN="$2"
-            shift 2
-            ;;
-        -l|--lookback)
-            DEFAULT_LOOKBACK="$2"
             shift 2
             ;;
         -f|--template-file)
@@ -127,9 +108,6 @@ echo ""
 print_status "Configuration:"
 echo "  Resource Group: $RESOURCE_GROUP"
 echo "  Workspace Name: $WORKSPACE_NAME"
-echo "  GuardDuty Table: $GUARDDUTY_TABLE"
-echo "  Raw Data Column: $RAW_COLUMN"
-echo "  Default Lookback: $DEFAULT_LOOKBACK"
 echo "  Template File: $TEMPLATE_FILE"
 echo ""
 
@@ -183,15 +161,6 @@ cat > "$TEMP_PARAMS" << EOF
     "parameters": {
         "workspaceName": {
             "value": "$WORKSPACE_NAME"
-        },
-        "guardDutyTableName": {
-            "value": "$GUARDDUTY_TABLE"
-        },
-        "rawDataColumn": {
-            "value": "$RAW_COLUMN"
-        },
-        "defaultLookback": {
-            "value": "$DEFAULT_LOOKBACK"
         }
     }
 }

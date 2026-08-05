@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/contracts/azure/awsguardduty-table.schema.json",
+  "title": "Microsoft Sentinel built-in AWSGuardDuty table record",
+  "$comment": "Authority: https://learn.microsoft.com/en-us/azure/azure-monitor/reference/tables/awsguardduty; reviewed 2026-07-23",
+  "type": "object",
+  "required": [
+    "AccountId",
+    "ActivityType",
+    "Arn",
+    "Description",
+    "Id",
+    "Partition",
+    "Region",
+    "ResourceDetails",
+    "SchemaVersion",
+    "ServiceDetails",
+    "Severity",
+    "TimeCreated",
+    "TimeGenerated",
+    "Title"
+  ],
+  "properties": {
+    "AccountId": {
+      "type": "string"
+    },
+    "ActivityType": {
+      "type": "string"
+    },
+    "Arn": {
+      "type": "string"
+    },
+    "Description": {
+      "type": ["string", "null"]
+    },
+    "Id": {
+      "type": "string"
+    },
+    "Partition": {
+      "type": "string"
+    },
+    "Region": {
+      "type": "string"
+    },
+    "ResourceDetails": {
+      "type": "object"
+    },
+    "SchemaVersion": {
+      "type": "string"
+    },
+    "ServiceDetails": {
+      "type": "object"
+    },
+    "Severity": {
+      "type": "integer"
+    },
+    "TimeCreated": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "TimeGenerated": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "Title": {
+      "type": ["string", "null"]
+    }
+  },
+  "additionalProperties": false
+}
+

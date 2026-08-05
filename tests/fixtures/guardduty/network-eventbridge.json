@@ -1,0 +1,65 @@
+{
+  "version": "0",
+  "id": "11111111-2222-3333-4444-555555555555",
+  "detail-type": "GuardDuty Finding",
+  "source": "aws.guardduty",
+  "account": "123456789012",
+  "time": "2026-07-22T18:47:18Z",
+  "region": "us-west-2",
+  "resources": [],
+  "detail": {
+    "accountId": "123456789012",
+    "arn": "arn:aws:guardduty:us-west-2:123456789012:detector/12abc34d567e8fa901bc2d34eexample/finding/00000000000000000000000000000000",
+    "createdAt": "2026-07-22T18:42:17.000Z",
+    "description": "An EC2 instance is communicating with a known command and control server.",
+    "id": "00000000000000000000000000000000",
+    "partition": "aws",
+    "region": "us-west-2",
+    "resource": {
+      "instanceDetails": {
+        "instanceId": "i-0123456789abcdef0",
+        "instanceType": "t3.micro",
+        "networkInterfaces": [
+          {
+            "privateIpAddress": "10.0.1.10",
+            "vpcId": "vpc-0123456789abcdef0"
+          }
+        ]
+      },
+      "resourceType": "Instance"
+    },
+    "schemaVersion": "2.0",
+    "service": {
+      "action": {
+        "actionType": "NETWORK_CONNECTION",
+        "networkConnectionAction": {
+          "connectionDirection": "OUTBOUND",
+          "localPortDetails": {
+            "port": 49152
+          },
+          "protocol": "TCP",
+          "remoteIpDetails": {
+            "country": {
+              "countryName": "United States"
+            },
+            "ipAddressV4": "203.0.113.10"
+          },
+          "remotePortDetails": {
+            "port": 443
+          }
+        }
+      },
+      "additionalInfo": {
+        "sample": true
+      },
+      "detectorId": "12abc34d567e8fa901bc2d34eexample",
+      "eventFirstSeen": "2026-07-22T18:41:17.000Z",
+      "eventLastSeen": "2026-07-22T18:42:17.000Z",
+      "serviceName": "guardduty"
+    },
+    "severity": 8.7,
+    "title": "Command and control activity",
+    "type": "Backdoor:EC2/C&CActivity.B!DNS",
+    "updatedAt": "2026-07-22T18:47:17.000Z"
+  }
+}

@@ -1,0 +1,96 @@
+{
+  "accountId": "123456789012",
+  "arn": "arn:aws:guardduty:us-west-2:123456789012:detector/12abc34d567e8fa901bc2d34eexample/finding/00000000000000000000000000000000",
+  "createdAt": "2026-07-22T18:42:17.000Z",
+  "description": "An EC2 instance is communicating with a known command and control server.",
+  "id": "00000000000000000000000000000000",
+  "partition": "aws",
+  "region": "us-west-2",
+  "resource": {
+    "instanceDetails": {
+      "availabilityZone": "us-west-2a",
+      "imageId": "ami-0123456789abcdef0",
+      "instanceId": "i-0123456789abcdef0",
+      "instanceState": "running",
+      "instanceType": "t3.micro",
+      "launchTime": "2026-07-20T10:00:00.000Z",
+      "networkInterfaces": [
+        {
+          "networkInterfaceId": "eni-0123456789abcdef0",
+          "privateDnsName": "ip-10-0-1-10.us-west-2.compute.internal",
+          "privateIpAddress": "10.0.1.10",
+          "publicDnsName": "ec2-198-51-100-10.us-west-2.compute.amazonaws.com",
+          "publicIp": "198.51.100.10",
+          "securityGroups": [
+            {
+              "groupId": "sg-0123456789abcdef0",
+              "groupName": "application"
+            }
+          ],
+          "subnetId": "subnet-0123456789abcdef0",
+          "vpcId": "vpc-0123456789abcdef0"
+        }
+      ],
+      "platform": "linux"
+    },
+    "resourceType": "Instance"
+  },
+  "schemaVersion": "2.0",
+  "service": {
+    "action": {
+      "actionType": "NETWORK_CONNECTION",
+      "networkConnectionAction": {
+        "blocked": false,
+        "connectionDirection": "OUTBOUND",
+        "localIpDetails": {
+          "ipAddressV4": "10.0.1.10"
+        },
+        "localPortDetails": {
+          "port": 49152,
+          "portName": "Unknown"
+        },
+        "protocol": "TCP",
+        "remoteIpDetails": {
+          "city": {
+            "cityName": "Seattle"
+          },
+          "country": {
+            "countryCode": "US",
+            "countryName": "United States"
+          },
+          "geoLocation": {
+            "lat": 47.6062,
+            "lon": -122.3321
+          },
+          "ipAddressV4": "203.0.113.10",
+          "organization": {
+            "asn": "64500",
+            "asnOrg": "Example Network",
+            "isp": "Example ISP",
+            "org": "Example Network"
+          }
+        },
+        "remotePortDetails": {
+          "port": 443,
+          "portName": "HTTPS"
+        }
+      }
+    },
+    "additionalInfo": {
+      "sample": true,
+      "value": "{}"
+    },
+    "archived": false,
+    "count": 1,
+    "detectorId": "12abc34d567e8fa901bc2d34eexample",
+    "eventFirstSeen": "2026-07-22T18:41:17.000Z",
+    "eventLastSeen": "2026-07-22T18:42:17.000Z",
+    "resourceRole": "TARGET",
+    "serviceName": "guardduty"
+  },
+  "severity": 8.7,
+  "title": "Command and control activity",
+  "type": "Backdoor:EC2/C&CActivity.B!DNS",
+  "updatedAt": "2026-07-22T18:47:17.000Z"
+}
+

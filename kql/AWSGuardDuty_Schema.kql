@@ -1,120 +1,42 @@
 // AWSGuardDuty_Schema
-// Schema validation and data quality assessment function
-// Validates GuardDuty data structure and provides quality metrics
+// Data-quality validation against Microsoft's built-in AWSGuardDuty columns.
 let AWSGuardDuty_Schema = (lookback: timespan = timespan(null)) {
     let config = AWSGuardDuty_Config();
-    let _lookback = iff(
-        isnull(lookback), 
-        totimespan(toscalar(config | where Setting == "DefaultLookback" | project Value)), 
-        lookback
-    );
-    let _tableName = toscalar(config | where Setting == "TableName" | project Value);
-    let _rawColumn = toscalar(config | where Setting == "RawColumn" | project Value);
-    let _altRawColumn = toscalar(config | where Setting == "AlternateRawColumn" | project Value);
+    let _defaultLookback = totimespan(toscalar(config | where Setting == "DefaultLookback" | project Value));
+    let _maxLookback = totimespan(toscalar(config | where Setting == "MaxLookback" | project Value));
+    let _lookback = iff(isnull(lookback), _defaultLookback, iff(lookback > _maxLookback, _maxLookback, lookback));
     //
-    table(_tableName)
+    AWSGuardDuty
     | where TimeGenerated >= ago(_lookback)
-    | extend RawJson = iff(
-        isnotempty(column_ifexists(_rawColumn, "")), 
-        column_ifexists(_rawColumn, ""),
-        column_ifexists(_altRawColumn, "")
-    )
-    | where isnotempty(RawJson)
-    | extend gd = try_parse_json(RawJson)
-    | where isnotempty(gd) and gd != dynamic({})
-    //
-    // Schema validation checks
     | extend
-        HasSchemaVersion = isnotempty(tostring(gd.schemaVersion)),
-        SchemaVersion = tostring(gd.schemaVersion),
-        HasId = isnotempty(tostring(gd.id)),
-        HasType = isnotempty(tostring(gd.type)),
-        HasSeverity = isnotnull(todouble(gd.severity)),
-        HasAccountId = isnotempty(tostring(gd.accountId)),
-        HasRegion = isnotempty(tostring(gd.region)),
-        HasCreatedAt = isnotempty(tostring(gd.createdAt)),
-        HasTitle = isnotempty(tostring(gd.title)),
-        HasService = isnotempty(gd.service),
-        HasResource = isnotempty(gd.resource),
-        //
-        // Data type validation
-        SeverityValue = todouble(gd.severity),
-        SeverityValid = isnotnull(todouble(gd.severity)) and todouble(gd.severity) >= 0 and todouble(gd.severity) <= 10,
-        TimestampValid = isnotempty(tostring(gd.createdAt)) and todatetime(gd.createdAt) > datetime(2010-01-01),
-        AccountIdValid = isnotempty(tostring(gd.accountId)) and strlen(tostring(gd.accountId)) == 12,
-        //
-        // Content validation
-        FindingType = tostring(gd.type),
-        FindingTypeValid = isnotempty(tostring(gd.type)) and tostring(gd.type) contains ":",
-        RegionValid = isnotempty(tostring(gd.region)) and strlen(tostring(gd.region)) >= 8
-    //
-    // Calculate quality scores
-    | extend 
-        RequiredFieldsScore = 
-            iff(HasId, 10, 0) +
-            iff(HasType, 10, 0) +
-            iff(HasSeverity, 10, 0) +
-            iff(HasAccountId, 10, 0) +
-            iff(HasRegion, 10, 0) +
-            iff(HasCreatedAt, 10, 0) +
-            iff(HasTitle, 10, 0) +
-            iff(HasService, 15, 0) +
-            iff(HasResource, 15, 0),
-        //
-        ValidationScore = 
-            iff(SeverityValid, 20, 0) +
-            iff(TimestampValid, 20, 0) +
-            iff(AccountIdValid, 20, 0) +
-            iff(FindingTypeValid, 20, 0) +
-            iff(RegionValid, 20, 0),
-        //
-        OverallQualityScore = (RequiredFieldsScore + ValidationScore) / 2
-    //
-    // Categorize data quality
+        HasFindingId = isnotempty(Id),
+        HasFindingType = isnotempty(ActivityType),
+        HasSeverity = isnotnull(Severity) and Severity between (0 .. 10),
+        HasAccountId = isnotempty(AccountId),
+        HasRegion = isnotempty(Region),
+        HasTimestamp = isnotnull(TimeCreated) and isnotnull(TimeGenerated),
+        HasResource = isnotnull(ResourceDetails) and ResourceDetails != dynamic({}),
+        HasService = isnotnull(ServiceDetails) and ServiceDetails != dynamic({})
     | extend QualityCategory = case(
-        OverallQualityScore >= 90, "Excellent",
-        OverallQualityScore >= 75, "Good",
-        OverallQualityScore >= 60, "Fair",
-        OverallQualityScore >= 40, "Poor",
-        "Invalid"
+        not(HasFindingId), "Missing FindingId",
+        not(HasFindingType), "Missing FindingType",
+        not(HasSeverity), "Invalid Severity",
+        not(HasAccountId), "Missing AccountId",
+        not(HasRegion), "Missing Region",
+        not(HasTimestamp), "Missing Timestamp",
+        not(HasResource), "Missing ResourceDetails",
+        not(HasService), "Missing ServiceDetails",
+        isempty(SchemaVersion), "Missing Schema Version",
+        not(SchemaVersion startswith "2."), "Unsupported Schema Version",
+        "Valid"
     )
-    //
-    // Project schema analysis results
-    | project 
+    | project
         TimeGenerated,
-        FindingId = tostring(gd.id),
-        FindingType,
-        SchemaVersion,
-        SeverityValue,
-        AwsAccountId = tostring(gd.accountId),
-        AwsRegion = tostring(gd.region),
-        //
-        // Field presence flags
-        HasSchemaVersion,
-        HasId,
-        HasType,
-        HasSeverity,
-        HasAccountId,
-        HasRegion,
-        HasCreatedAt,
-        HasTitle,
-        HasService,
-        HasResource,
-        //
-        // Validation flags
-        SeverityValid,
-        TimestampValid,
-        AccountIdValid,
-        FindingTypeValid,
-        RegionValid,
-        //
-        // Quality metrics
-        RequiredFieldsScore,
-        ValidationScore,
-        OverallQualityScore,
+        Id,
+        ActivityType,
         QualityCategory,
-        //
-        // Raw data for debugging
-        RawJson
+        SchemaVersion,
+        AccountId,
+        Region
 };
 AWSGuardDuty_Schema

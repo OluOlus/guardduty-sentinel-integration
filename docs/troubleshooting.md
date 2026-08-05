@@ -133,36 +133,27 @@ AWSGuardDuty
 | take 1
 | project *
 
-// Check if EventData column exists and has content
+// Verify Microsoft's native table columns
 AWSGuardDuty
-| where TimeGenerated > ago(1h)
-| project TimeGenerated, EventData
-| where isnotempty(EventData)
-| take 5
+| getschema
 ```
 
 **Solutions:**
 
-#### A. Wrong Column Name
-The parsing functions expect data in the `EventData` column. If your data is in a different column:
+#### A. Wrong Table Contract
+The parsers require Microsoft's built-in `AWSGuardDuty` columns, including
+`Id`, `ActivityType`, `ResourceDetails`, and `ServiceDetails`. There is no
+`EventData` raw column in this table. Compare `getschema` with
+`contracts/azure/awsguardduty-table.schema.json`. A custom table requires an
+explicit adapter.
 
-1. **Check actual column names:**
-   ```kql
-   AWSGuardDuty | getschema
-   ```
-
-2. **Update configuration:**
-   - Redeploy with correct `rawDataColumn` parameter
-   - Or manually update the config function
-
-#### B. Data Format Issues
+#### B. Dynamic Object Issues
 ```kql
-// Check if data is valid JSON
+// Find records missing the native dynamic objects
 AWSGuardDuty
 | where TimeGenerated > ago(1h)
-| extend ParseTest = parse_json(EventData)
-| where isnull(ParseTest)
-| take 10  // These records have invalid JSON
+| where isnull(ResourceDetails) or isnull(ServiceDetails)
+| take 10
 ```
 
 ### Issue 4: High Severity Findings Not Appearing
@@ -450,8 +441,6 @@ AWSGuardDuty_Schema(1d)
    ```kql
    // Check for new GuardDuty schema versions
    AWSGuardDuty
-   | extend gd = parse_json(EventData)
-   | extend SchemaVersion = tostring(gd.schemaVersion)
    | summarize count() by SchemaVersion
    | order by SchemaVersion desc
    ```
@@ -559,7 +548,9 @@ When reporting issues, include:
 1. **Connector status** (Connected/Disconnected)
 2. **Sample raw data** (anonymized):
    ```kql
-   AWSGuardDuty | take 1 | project EventData
+   AWSGuardDuty
+   | take 1
+   | project-away ResourceDetails, ServiceDetails
    ```
 3. **Error messages** from parsing functions
 4. **AWS configuration** (IAM role, S3 bucket, SQS queue)

@@ -1,14 +1,14 @@
 // AWSGuardDuty_ASIMNetworkSession
-// Maps GuardDuty network findings to ASIM Network Session schema v0.2.6.
+// Maps GuardDuty network findings to ASIM Network Session schema v0.2.7.
 // All column references are sourced from AWSGuardDuty_Network() output schema only.
 let AWSGuardDuty_ASIMNetworkSession = (lookback: timespan = timespan(null)) {
     AWSGuardDuty_Network(lookback)
     | where isnotempty(RemoteIp)
-    // ASIM Network Session schema fields (v0.2.6)
+    // ASIM Network Session schema fields (v0.2.7)
     | extend
         // Standard event metadata
         EventType              = "NetworkSession",
-        EventSchemaVersion     = "0.2.6",
+        EventSchemaVersion     = "0.2.7",
         EventVendor            = "AWS",
         EventProduct           = "GuardDuty",
         EventProductVersion    = "1.0",

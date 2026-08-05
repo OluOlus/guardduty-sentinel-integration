@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "guardduty-sentinel-integration"
+version = "1.5.0"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.setuptools]
+py-modules = []
+
+[project.optional-dependencies]
+test = [
+  "boto3>=1.35,<2",
+  "hypothesis>=6.100,<7",
+  "jsonschema[format]>=4.23,<5",
+  "pytest>=8.3,<9",
+  "pytest-cov>=5,<7",
+  "testcontainers[localstack]>=4.8,<5",
+]
+mutation = [
+  "mutmut>=3.2,<4",
+]
+diagram = [
+  "diagrams>=0.24,<1",
+]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers"
+testpaths = ["tests"]
+markers = [
+  "container: requires Docker and locally emulated services",
+  "live: requires explicitly configured AWS and Azure sandbox credentials",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["scripts"]
+omit = [
+  "scripts/run_live_conformance.py",
+  "scripts/check_mutation_score.py",
+  "scripts/sync_arm_template.py",
+]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
+
+[tool.mutmut]
+source_paths = ["scripts"]
+do_not_mutate = [
+  "scripts/__init__.py",
+  "scripts/run_live_conformance.py",
+  "scripts/sync_arm_template.py",
+]
+also_copy = ["contracts"]
+mutate_only_covered_lines = true
+pytest_add_cli_args_test_selection = [
+  "tests/test_lambda_ingestion_handler.py",
+  "tests/contracts/test_data_contracts.py",
+]

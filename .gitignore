@@ -51,5 +51,15 @@ logs/
 *.backup
 requirements.md
 
-# Sample data (kept locally, not in remote)
-sample-data/
+# Generated Python and test artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
+.mutmut-cache
+mutants/
+mutmut-stats.json
+.venv/
